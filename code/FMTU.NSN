@@ -1,0 +1,236 @@
+* >Natural Source Code: FMTU
+* SUBPROGRAM: FMTU - FORMATTING UTILITY
+* DESCRIPTION: PROVIDES COMMON FORMATTING FUNCTIONS
+*              FOR DISPLAY AND REPORTING
+* LIBRARY: RETAILCORE
+* CREATED: 1998-05-10  S. WILLIAMS
+* MODIFIED: 2005-07-20 - ADDED ADDRESS FORMATTING
+* MODIFIED: 2012-01-15 - ADDED ORDER NUMBER FORMAT
+* MODIFIED: 2018-11-22 - ADDED INTERNATIONAL CURRENCY
+* -------------------------------------------------------
+* OPERATION CODES:
+*   CURR - FORMAT CURRENCY
+*   PHON - FORMAT PHONE NUMBER
+*   NAME - FORMAT NAME (LAST, FIRST)
+*   ADDR - FORMAT ADDRESS (MULTI-LINE)
+*   ORDN - FORMAT ORDER NUMBER WITH PREFIX
+*   PADL - PAD LEFT
+*   PADR - PAD RIGHT
+*   UPPR - CONVERT TO UPPERCASE
+*   MASK - MASK SENSITIVE DATA
+* -------------------------------------------------------
+DEFINE DATA
+PARAMETER
+  1 P-OPERATION           (A4)    /* OPERATION CODE */
+  1 P-INPUT-VALUE         (A80)   /* INPUT VALUE */
+  1 P-INPUT-NUM           (N11.2) /* NUMERIC INPUT */
+  1 P-PAD-CHAR            (A1)    /* PAD CHARACTER */
+  1 P-PAD-LENGTH          (N3)    /* DESIRED LENGTH */
+  1 P-OUTPUT-VALUE        (A132)  /* FORMATTED OUTPUT */
+*
+LOCAL
+  1 #WORK-STRING          (A132)
+  1 #WORK-NUM             (N11.2)
+  1 #IDX                  (N3)
+  1 #LEN                  (N3)
+  1 #OUT-IDX              (N3)
+  1 #CHAR                 (A1)
+  1 #DIGIT-COUNT          (N3)
+  1 #COMMA-POS            (N3)
+  1 #SIGN                 (A1)
+  1 #INT-PART             (A15)
+  1 #DEC-PART             (A2)
+  1 #FORMATTED-INT        (A20)
+  1 #TEMP                 (A80)
+  1 #CURRENCY-SYMBOL      (A1) INIT <'$'>
+END-DEFINE
+*
+* -------------------------------------------------------
+* INITIALIZE
+* -------------------------------------------------------
+RESET P-OUTPUT-VALUE
+*
+* -------------------------------------------------------
+* ROUTE TO OPERATION
+* -------------------------------------------------------
+DECIDE ON FIRST VALUE OF P-OPERATION
+  VALUE 'CURR'
+    PERFORM FORMAT-CURRENCY
+  VALUE 'PHON'
+    PERFORM FORMAT-PHONE
+  VALUE 'NAME'
+    PERFORM FORMAT-NAME
+  VALUE 'ADDR'
+    PERFORM FORMAT-ADDRESS
+  VALUE 'ORDN'
+    PERFORM FORMAT-ORDER-NUMBER
+  VALUE 'PADL'
+    PERFORM PAD-LEFT
+  VALUE 'PADR'
+    PERFORM PAD-RIGHT
+  VALUE 'UPPR'
+    PERFORM TO-UPPER
+  VALUE 'MASK'
+    PERFORM MASK-DATA
+  NONE VALUE
+    MOVE '*** INVALID FORMAT OPERATION ***' TO P-OUTPUT-VALUE
+END-DECIDE
+*
+* =======================================
+* SUBROUTINES
+* =======================================
+*
+* -------------------------------------------------------
+* FORMAT CURRENCY WITH COMMAS
+* $1,234,567.89
+* MODIFIED 2018-11-22 - INTERNATIONAL SUPPORT
+* -------------------------------------------------------
+DEFINE SUBROUTINE FORMAT-CURRENCY
+  RESET #SIGN
+  MOVE P-INPUT-NUM TO #WORK-NUM
+*
+  IF #WORK-NUM < 0
+    MOVE '-' TO #SIGN
+    MULTIPLY #WORK-NUM BY -1
+  END-IF
+*
+  MOVE EDITED #WORK-NUM (EM=ZZZZZZZZZZ9.99) TO #WORK-STRING
+  EXAMINE #WORK-STRING FOR LEADING ' ' REPLACE WITH ''
+*
+  * ADD CURRENCY SYMBOL AND SIGN
+  IF #SIGN = '-'
+    COMPRESS '-' #CURRENCY-SYMBOL #WORK-STRING INTO P-OUTPUT-VALUE
+      LEAVING NO SPACE
+  ELSE
+    COMPRESS #CURRENCY-SYMBOL #WORK-STRING INTO P-OUTPUT-VALUE
+      LEAVING NO SPACE
+  END-IF
+END-SUBROUTINE
+*
+* -------------------------------------------------------
+* FORMAT PHONE NUMBER (XXX) XXX-XXXX
+* -------------------------------------------------------
+DEFINE SUBROUTINE FORMAT-PHONE
+  * EXTRACT DIGITS ONLY
+  RESET #DIGIT-COUNT
+  RESET #TEMP
+  EXAMINE P-INPUT-VALUE FOR ' ' GIVING LENGTH IN #LEN
+  FOR #IDX = 1 TO #LEN
+    MOVE SUBSTRING(P-INPUT-VALUE, #IDX, 1) TO #CHAR
+    IF #CHAR >= '0' AND #CHAR <= '9'
+      ADD 1 TO #DIGIT-COUNT
+      MOVE #CHAR TO SUBSTRING(#TEMP, #DIGIT-COUNT, 1)
+    END-IF
+  END-FOR
+*
+  IF #DIGIT-COUNT = 10
+    * US FORMAT (XXX) XXX-XXXX
+    COMPRESS '(' SUBSTRING(#TEMP,1,3) ') '
+      SUBSTRING(#TEMP,4,3) '-' SUBSTRING(#TEMP,7,4)
+      INTO P-OUTPUT-VALUE LEAVING NO SPACE
+  ELSE IF #DIGIT-COUNT = 11
+    * WITH COUNTRY CODE
+    COMPRESS '+' SUBSTRING(#TEMP,1,1) ' ('
+      SUBSTRING(#TEMP,2,3) ') '
+      SUBSTRING(#TEMP,5,3) '-' SUBSTRING(#TEMP,8,4)
+      INTO P-OUTPUT-VALUE LEAVING NO SPACE
+  ELSE
+    * RETURN AS-IS
+    MOVE P-INPUT-VALUE TO P-OUTPUT-VALUE
+  END-IF
+  END-IF
+END-SUBROUTINE
+*
+* -------------------------------------------------------
+* FORMAT NAME: LAST, FIRST
+* -------------------------------------------------------
+DEFINE SUBROUTINE FORMAT-NAME
+  * INPUT EXPECTED AS "FIRST|LAST" WITH | SEPARATOR
+  EXAMINE P-INPUT-VALUE FOR '|' GIVING POSITION IN #IDX
+  IF #IDX > 0
+    MOVE SUBSTRING(P-INPUT-VALUE, #IDX + 1) TO #TEMP
+    COMPRESS #TEMP ', ' SUBSTRING(P-INPUT-VALUE, 1, #IDX - 1)
+      INTO P-OUTPUT-VALUE
+  ELSE
+    MOVE P-INPUT-VALUE TO P-OUTPUT-VALUE
+  END-IF
+END-SUBROUTINE
+*
+* -------------------------------------------------------
+* FORMAT ADDRESS (CONCATENATED)
+* MODIFIED 2005-07-20
+* -------------------------------------------------------
+DEFINE SUBROUTINE FORMAT-ADDRESS
+  * INPUT: ADDR1|ADDR2|CITY|STATE|ZIP
+  * OUTPUT: FORMATTED SINGLE LINE
+  MOVE P-INPUT-VALUE TO P-OUTPUT-VALUE
+  EXAMINE P-OUTPUT-VALUE FOR '|' REPLACE WITH ', '
+END-SUBROUTINE
+*
+* -------------------------------------------------------
+* FORMAT ORDER NUMBER WITH PREFIX
+* MODIFIED 2012-01-15
+* -------------------------------------------------------
+DEFINE SUBROUTINE FORMAT-ORDER-NUMBER
+  * INPUT: NUMERIC ORDER ID
+  * OUTPUT: ORD-XXXXXXXXXX (ZERO PADDED)
+  COMPRESS 'ORD-' P-INPUT-VALUE INTO P-OUTPUT-VALUE LEAVING NO SPACE
+END-SUBROUTINE
+*
+* -------------------------------------------------------
+* PAD LEFT WITH CHARACTER
+* -------------------------------------------------------
+DEFINE SUBROUTINE PAD-LEFT
+  EXAMINE P-INPUT-VALUE FOR ' ' GIVING LENGTH IN #LEN
+  IF #LEN >= P-PAD-LENGTH
+    MOVE P-INPUT-VALUE TO P-OUTPUT-VALUE
+    ESCAPE ROUTINE
+  END-IF
+  RESET P-OUTPUT-VALUE
+  FOR #IDX = 1 TO (P-PAD-LENGTH - #LEN)
+    MOVE P-PAD-CHAR TO SUBSTRING(P-OUTPUT-VALUE, #IDX, 1)
+  END-FOR
+  MOVE P-INPUT-VALUE TO SUBSTRING(P-OUTPUT-VALUE, P-PAD-LENGTH - #LEN + 1)
+END-SUBROUTINE
+*
+* -------------------------------------------------------
+* PAD RIGHT WITH CHARACTER
+* -------------------------------------------------------
+DEFINE SUBROUTINE PAD-RIGHT
+  MOVE P-INPUT-VALUE TO P-OUTPUT-VALUE
+  EXAMINE P-OUTPUT-VALUE FOR ' ' GIVING LENGTH IN #LEN
+  IF #LEN >= P-PAD-LENGTH
+    ESCAPE ROUTINE
+  END-IF
+  FOR #IDX = #LEN + 1 TO P-PAD-LENGTH
+    MOVE P-PAD-CHAR TO SUBSTRING(P-OUTPUT-VALUE, #IDX, 1)
+  END-FOR
+END-SUBROUTINE
+*
+* -------------------------------------------------------
+* CONVERT TO UPPERCASE
+* -------------------------------------------------------
+DEFINE SUBROUTINE TO-UPPER
+  MOVE P-INPUT-VALUE TO P-OUTPUT-VALUE
+  EXAMINE P-OUTPUT-VALUE AND TRANSLATE INTO UPPER CASE
+END-SUBROUTINE
+*
+* -------------------------------------------------------
+* MASK SENSITIVE DATA (SHOW LAST 4)
+* E.G. ****1234
+* -------------------------------------------------------
+DEFINE SUBROUTINE MASK-DATA
+  EXAMINE P-INPUT-VALUE FOR ' ' GIVING LENGTH IN #LEN
+  IF #LEN <= 4
+    MOVE P-INPUT-VALUE TO P-OUTPUT-VALUE
+    ESCAPE ROUTINE
+  END-IF
+  RESET P-OUTPUT-VALUE
+  FOR #IDX = 1 TO (#LEN - 4)
+    MOVE '*' TO SUBSTRING(P-OUTPUT-VALUE, #IDX, 1)
+  END-FOR
+  MOVE SUBSTRING(P-INPUT-VALUE, #LEN - 3, 4) TO
+    SUBSTRING(P-OUTPUT-VALUE, #LEN - 3, 4)
+END-SUBROUTINE
+*
+END

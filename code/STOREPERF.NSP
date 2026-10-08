@@ -1,0 +1,403 @@
+* >Natural Source Code: STOREPERF
+* PROGRAM: STOREPERF - STORE PERFORMANCE REPORT
+* DESCRIPTION: COMPREHENSIVE STORE PERFORMANCE ANALYSIS
+*              REVENUE, ORDERS, AVG ORDER VALUE, RETURNS
+*              INVENTORY TURNS, CUSTOMER METRICS
+* LIBRARY: RETAILCORE
+* ADABAS FILES: 103 (STORE), 111 (ORDER), 112 (ORDER-LINE),
+*               105 (INVENTORY), 150 (RETURN)
+* CREATED: 2005-11-15  A. GARCIA
+* MODIFIED: 2012-06-22 - ADDED INVENTORY METRICS
+* MODIFIED: 2018-03-10 - ADDED CUSTOMER METRICS
+* MODIFIED: 2023-08-15 - ADDED PERIOD COMPARISON
+* -------------------------------------------------------
+DEFINE DATA
+LOCAL
+  1 #START-DATE           (D)
+  1 #END-DATE             (D)
+  1 #PRIOR-START          (D)
+  1 #PRIOR-END            (D)
+  1 #DAYS-IN-PERIOD       (N4)
+*
+* STORE ARRAY - MAX 100 STORES
+  1 #MAX-STORES           (N4)   INIT <100>
+  1 #STORE-COUNT          (N4)
+  1 #STORE-DATA (1:100)
+    2 #ST-ID              (N4)
+    2 #ST-NAME            (A30)
+    2 #ST-REGION          (A2)
+    2 #ST-STATUS          (A1)
+    2 #ST-ORDERS          (N8)
+    2 #ST-LINES           (N8)
+    2 #ST-REVENUE         (N13.2)
+    2 #ST-COST            (N13.2)
+    2 #ST-DISCOUNT        (N11.2)
+    2 #ST-RETURNS          (N8)
+    2 #ST-RETURN-AMT      (N11.2)
+    2 #ST-NET-REVENUE     (N13.2)
+    2 #ST-MARGIN          (N13.2)
+    2 #ST-MARGIN-PCT      (N5.2)
+    2 #ST-AVG-ORDER       (N9.2)
+    2 #ST-CUSTOMERS       (N8)
+    2 #ST-INV-VALUE       (N13.2)
+    2 #ST-INV-ITEMS       (N10)
+    2 #ST-LOW-STOCK       (N6)
+    2 #ST-OUT-OF-STOCK    (N6)
+*
+* PRIOR PERIOD DATA
+  1 #PRIOR-DATA (1:100)
+    2 #PR-REVENUE         (N13.2)
+    2 #PR-ORDERS          (N8)
+*
+* TOTALS
+  1 #GRAND-ORDERS         (N10)
+  1 #GRAND-REVENUE        (N13.2)
+  1 #GRAND-COST           (N13.2)
+  1 #GRAND-RETURNS        (N8)
+  1 #GRAND-RETURN-AMT     (N11.2)
+  1 #GRAND-NET            (N13.2)
+  1 #GRAND-MARGIN         (N13.2)
+  1 #GRAND-MARGIN-PCT     (N5.2)
+*
+  1 #IDX                  (N4)
+  1 #FOUND                (L)
+  1 #REV-CHANGE-PCT       (N7.2)
+  1 #ORD-CHANGE-PCT       (N7.2)
+*
+  1 SPR-VIEW VIEW OF STORE-FILE
+    2 SPR-ID              (N4)
+    2 SPR-NAME            (A30)
+    2 SPR-REGION          (A2)
+    2 SPR-STATUS          (A1)
+*
+  1 SOR-VIEW VIEW OF ORDER-FILE
+    2 SOR-ID              (N10)
+    2 SOR-STORE-ID        (N4)
+    2 SOR-STATUS          (A3)
+    2 SOR-DATE            (D)
+    2 SOR-TOTAL-AMT       (N11.2)
+    2 SOR-CUST-ID         (N8)
+*
+  1 SLR-VIEW VIEW OF ORDER-LINE-FILE
+    2 SLR-ORDER-ID        (N10)
+    2 SLR-LINE-TOTAL      (N11.2)
+    2 SLR-UNIT-COST       (N9.2)
+    2 SLR-QTY-ORDERED     (N6)
+    2 SLR-DISCOUNT-AMT    (N9.2)
+    2 SLR-STATUS          (A3)
+*
+  1 SIR-VIEW VIEW OF INVENTORY-FILE
+    2 SIR-LOCATION-ID     (N6)
+    2 SIR-LOCATION-TYPE   (A1)
+    2 SIR-ON-HAND         (N8)
+    2 SIR-RESERVED        (N8)
+    2 SIR-ALLOCATED       (N8)
+    2 SIR-DAMAGED         (N8)
+    2 SIR-SAFETY-STOCK    (N8)
+    2 SIR-REORDER-LEVEL   (N8)
+    2 SIR-STATUS          (A1)
+*
+  1 SRR-VIEW VIEW OF RETURN-FILE
+    2 SRR-ORDER-ID        (N10)
+    2 SRR-STATUS          (A3)
+    2 SRR-REFUND-AMT      (N11.2)
+    2 SRR-CREATED-DATE    (D)
+END-DEFINE
+*
+* -------------------------------------------------------
+* SETUP REPORT PERIOD - DEFAULT LAST 30 DAYS
+* -------------------------------------------------------
+MOVE *DATX TO #END-DATE
+MOVE #END-DATE TO #START-DATE
+SUBTRACT 30 FROM #START-DATE (D)
+*
+* PRIOR PERIOD FOR COMPARISON
+MOVE #START-DATE TO #PRIOR-END
+SUBTRACT 1 FROM #PRIOR-END (D)
+MOVE #PRIOR-END TO #PRIOR-START
+SUBTRACT 30 FROM #PRIOR-START (D)
+*
+COMPUTE #DAYS-IN-PERIOD = 30
+*
+* -------------------------------------------------------
+* STEP 1: LOAD ACTIVE STORES
+* -------------------------------------------------------
+READ SPR-VIEW BY SPR-ID
+  IF SPR-STATUS NE 'A'
+    ESCAPE TOP
+  END-IF
+  IF #STORE-COUNT >= #MAX-STORES
+    ESCAPE BOTTOM
+  END-IF
+  ADD 1 TO #STORE-COUNT
+  MOVE SPR-ID     TO #ST-ID(#STORE-COUNT)
+  MOVE SPR-NAME   TO #ST-NAME(#STORE-COUNT)
+  MOVE SPR-REGION TO #ST-REGION(#STORE-COUNT)
+  MOVE SPR-STATUS TO #ST-STATUS(#STORE-COUNT)
+END-READ
+*
+* -------------------------------------------------------
+* STEP 2: AGGREGATE ORDER DATA BY STORE
+* -------------------------------------------------------
+FIND SOR-VIEW WITH SOR-DATE GE #START-DATE
+    AND SOR-DATE LE #END-DATE
+  IF SOR-STATUS = 'CAN'
+    ESCAPE TOP
+  END-IF
+*
+  * FIND STORE INDEX
+  MOVE FALSE TO #FOUND
+  FOR #IDX = 1 TO #STORE-COUNT
+    IF #ST-ID(#IDX) = SOR-STORE-ID
+      MOVE TRUE TO #FOUND
+      ESCAPE BOTTOM
+    END-IF
+  END-FOR
+  IF NOT #FOUND
+    ESCAPE TOP
+  END-IF
+*
+  ADD 1 TO #ST-ORDERS(#IDX)
+  ADD SOR-TOTAL-AMT TO #ST-REVENUE(#IDX)
+*
+  * COUNT DISTINCT CUSTOMERS - SIMPLIFIED
+  * NOTE: THIS DOES NOT TRULY DEDUPLICATE
+  * TODO: IMPLEMENT PROPER DISTINCT COUNT
+  ADD 1 TO #ST-CUSTOMERS(#IDX)
+*
+  * GET LINE DETAILS FOR COST AND DISCOUNT
+  FIND SLR-VIEW WITH SLR-ORDER-ID = SOR-ID
+    IF SLR-STATUS NE 'CAN'
+      ADD 1 TO #ST-LINES(#IDX)
+      ADD SLR-UNIT-COST * SLR-QTY-ORDERED TO #ST-COST(#IDX)
+      ADD SLR-DISCOUNT-AMT TO #ST-DISCOUNT(#IDX)
+    END-IF
+  END-FIND
+*
+  IF *COUNTER > 100000
+    ESCAPE BOTTOM
+  END-IF
+END-FIND
+*
+* -------------------------------------------------------
+* STEP 3: PRIOR PERIOD ORDERS (FOR COMPARISON)
+* -------------------------------------------------------
+FIND SOR-VIEW WITH SOR-DATE GE #PRIOR-START
+    AND SOR-DATE LE #PRIOR-END
+  IF SOR-STATUS = 'CAN'
+    ESCAPE TOP
+  END-IF
+  FOR #IDX = 1 TO #STORE-COUNT
+    IF #ST-ID(#IDX) = SOR-STORE-ID
+      ADD SOR-TOTAL-AMT TO #PR-REVENUE(#IDX)
+      ADD 1 TO #PR-ORDERS(#IDX)
+      ESCAPE BOTTOM
+    END-IF
+  END-FOR
+  IF *COUNTER > 100000
+    ESCAPE BOTTOM
+  END-IF
+END-FIND
+*
+* -------------------------------------------------------
+* STEP 4: RETURN DATA
+* -------------------------------------------------------
+FIND SRR-VIEW WITH SRR-CREATED-DATE GE #START-DATE
+    AND SRR-CREATED-DATE LE #END-DATE
+  IF SRR-STATUS = 'REJ'
+    ESCAPE TOP
+  END-IF
+*
+  * FIND STORE FROM ORIGINAL ORDER
+  1 #RET-STORE (N4)
+  RESET #RET-STORE
+  FIND SOR-VIEW WITH SOR-ID = SRR-ORDER-ID
+    IF NO RECORDS FOUND
+      IGNORE
+    END-NOREC
+    MOVE SOR-STORE-ID TO #RET-STORE
+    ESCAPE BOTTOM
+  END-FIND
+*
+  IF #RET-STORE > 0
+    FOR #IDX = 1 TO #STORE-COUNT
+      IF #ST-ID(#IDX) = #RET-STORE
+        ADD 1 TO #ST-RETURNS(#IDX)
+        ADD SRR-REFUND-AMT TO #ST-RETURN-AMT(#IDX)
+        ESCAPE BOTTOM
+      END-IF
+    END-FOR
+  END-IF
+*
+  IF *COUNTER > 50000
+    ESCAPE BOTTOM
+  END-IF
+END-FIND
+*
+* -------------------------------------------------------
+* STEP 5: INVENTORY METRICS BY STORE
+* -------------------------------------------------------
+READ SIR-VIEW BY SIR-LOCATION-ID
+  IF SIR-STATUS NE 'A' OR SIR-LOCATION-TYPE NE 'S'
+    ESCAPE TOP
+  END-IF
+*
+  * MATCH LOCATION TO STORE
+  * NOTE: ASSUMES LOCATION-ID = STORE-ID FOR STORES
+  * THIS IS A SIMPLIFICATION - REAL SYSTEM USES LOCATION MAP
+  FOR #IDX = 1 TO #STORE-COUNT
+    IF #ST-ID(#IDX) = SIR-LOCATION-ID
+      ADD SIR-ON-HAND TO #ST-INV-ITEMS(#IDX)
+*
+      * CHECK LOW/OUT OF STOCK
+      1 #AVAIL (N8)
+      COMPUTE #AVAIL = SIR-ON-HAND - SIR-RESERVED
+        - SIR-ALLOCATED - SIR-DAMAGED
+      IF #AVAIL < 0
+        MOVE 0 TO #AVAIL
+      END-IF
+*
+      IF SIR-ON-HAND = 0
+        ADD 1 TO #ST-OUT-OF-STOCK(#IDX)
+      ELSE IF #AVAIL < SIR-REORDER-LEVEL AND SIR-REORDER-LEVEL > 0
+        ADD 1 TO #ST-LOW-STOCK(#IDX)
+      END-IF
+      END-IF
+*
+      ESCAPE BOTTOM
+    END-IF
+  END-FOR
+*
+  IF *COUNTER > 200000
+    ESCAPE BOTTOM
+  END-IF
+END-READ
+*
+* -------------------------------------------------------
+* STEP 6: CALCULATE DERIVED METRICS
+* -------------------------------------------------------
+FOR #IDX = 1 TO #STORE-COUNT
+  * NET REVENUE
+  COMPUTE #ST-NET-REVENUE(#IDX) = #ST-REVENUE(#IDX)
+    - #ST-RETURN-AMT(#IDX)
+*
+  * MARGIN
+  COMPUTE #ST-MARGIN(#IDX) = #ST-NET-REVENUE(#IDX)
+    - #ST-COST(#IDX)
+  IF #ST-NET-REVENUE(#IDX) > 0
+    COMPUTE #ST-MARGIN-PCT(#IDX) =
+      #ST-MARGIN(#IDX) / #ST-NET-REVENUE(#IDX) * 100
+  END-IF
+*
+  * AVG ORDER VALUE
+  IF #ST-ORDERS(#IDX) > 0
+    COMPUTE #ST-AVG-ORDER(#IDX) =
+      #ST-REVENUE(#IDX) / #ST-ORDERS(#IDX)
+  END-IF
+*
+  * ACCUMULATE GRAND TOTALS
+  ADD #ST-ORDERS(#IDX)     TO #GRAND-ORDERS
+  ADD #ST-REVENUE(#IDX)    TO #GRAND-REVENUE
+  ADD #ST-COST(#IDX)       TO #GRAND-COST
+  ADD #ST-RETURNS(#IDX)    TO #GRAND-RETURNS
+  ADD #ST-RETURN-AMT(#IDX) TO #GRAND-RETURN-AMT
+END-FOR
+*
+COMPUTE #GRAND-NET = #GRAND-REVENUE - #GRAND-RETURN-AMT
+COMPUTE #GRAND-MARGIN = #GRAND-NET - #GRAND-COST
+IF #GRAND-NET > 0
+  COMPUTE #GRAND-MARGIN-PCT =
+    #GRAND-MARGIN / #GRAND-NET * 100
+END-IF
+*
+* -------------------------------------------------------
+* OUTPUT REPORT
+* -------------------------------------------------------
+WRITE 'RETAILCORE - STORE PERFORMANCE REPORT'
+WRITE '======================================'
+WRITE 'PERIOD:' #START-DATE 'TO' #END-DATE
+WRITE 'RUN DATE:' *DATX
+WRITE ' '
+WRITE 'STR# STORE NAME                     RGN  ORDERS'
+  '  NET REVENUE    MARGIN   MRG%  AVG ORD  RETURNS  RET AMT'
+WRITE '---- ------------------------------ ---  ------'
+  '  -----------  ---------  ----  -------  -------  -------'
+*
+FOR #IDX = 1 TO #STORE-COUNT
+  IF #ST-ORDERS(#IDX) > 0 OR #ST-INV-ITEMS(#IDX) > 0
+*
+    * CALCULATE PERIOD-OVER-PERIOD CHANGE
+    IF #PR-REVENUE(#IDX) > 0
+      COMPUTE #REV-CHANGE-PCT =
+        (#ST-NET-REVENUE(#IDX) - #PR-REVENUE(#IDX))
+        / #PR-REVENUE(#IDX) * 100
+    ELSE
+      MOVE 0 TO #REV-CHANGE-PCT
+    END-IF
+*
+    WRITE #ST-ID(#IDX)
+      #ST-NAME(#IDX) (EM=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX)
+      #ST-REGION(#IDX)
+      #ST-ORDERS(#IDX)
+      #ST-NET-REVENUE(#IDX)
+      #ST-MARGIN(#IDX)
+      #ST-MARGIN-PCT(#IDX) '%'
+      #ST-AVG-ORDER(#IDX)
+      #ST-RETURNS(#IDX)
+      #ST-RETURN-AMT(#IDX)
+  END-IF
+END-FOR
+*
+WRITE ' '
+WRITE '---- ------------------------------ ---  ------'
+  '  -----------  ---------  ----  -------  -------  -------'
+WRITE 'GRAND TOTALS                          ' #GRAND-ORDERS
+  #GRAND-NET #GRAND-MARGIN #GRAND-MARGIN-PCT '%'
+  '         ' #GRAND-RETURNS #GRAND-RETURN-AMT
+*
+* INVENTORY SUMMARY
+WRITE ' '
+WRITE 'INVENTORY STATUS BY STORE'
+WRITE '========================='
+WRITE 'STR# STORE NAME                     ITEMS ON HAND'
+  '  LOW STOCK  OUT OF STOCK'
+WRITE '---- ------------------------------ -------------'
+  '  ---------  ------------'
+*
+FOR #IDX = 1 TO #STORE-COUNT
+  IF #ST-INV-ITEMS(#IDX) > 0
+    WRITE #ST-ID(#IDX)
+      #ST-NAME(#IDX) (EM=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX)
+      #ST-INV-ITEMS(#IDX)
+      #ST-LOW-STOCK(#IDX)
+      #ST-OUT-OF-STOCK(#IDX)
+  END-IF
+END-FOR
+*
+* PERIOD COMPARISON
+WRITE ' '
+WRITE 'PERIOD-OVER-PERIOD COMPARISON'
+WRITE '============================='
+WRITE 'STR# PRIOR REVENUE   CURRENT REVENUE  CHANGE %'
+WRITE '---- ---------------  ---------------  --------'
+*
+FOR #IDX = 1 TO #STORE-COUNT
+  IF #PR-REVENUE(#IDX) > 0 OR #ST-NET-REVENUE(#IDX) > 0
+    IF #PR-REVENUE(#IDX) > 0
+      COMPUTE #REV-CHANGE-PCT =
+        (#ST-NET-REVENUE(#IDX) - #PR-REVENUE(#IDX))
+        / #PR-REVENUE(#IDX) * 100
+    ELSE
+      MOVE 999.99 TO #REV-CHANGE-PCT
+    END-IF
+    WRITE #ST-ID(#IDX)
+      #PR-REVENUE(#IDX)
+      #ST-NET-REVENUE(#IDX)
+      #REV-CHANGE-PCT '%'
+  END-IF
+END-FOR
+*
+WRITE ' '
+WRITE 'END OF REPORT'
+*
+END

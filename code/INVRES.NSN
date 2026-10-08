@@ -1,0 +1,266 @@
+* >Natural Source Code: INVRES
+* SUBPROGRAM: INVRES - INVENTORY RESERVATION
+* DESCRIPTION: RESERVES INVENTORY FOR AN ORDER
+*              CREATES RESERVATION RECORD AND
+*              UPDATES INVENTORY COUNTERS
+* LIBRARY: RETAILCORE
+* ADABAS FILES: 105 (INVENTORY), 106 (RESERVATION)
+* CREATED: 1998-09-10  K. PATEL
+* MODIFIED: 2004-06-22 - ADDED RESERVATION EXPIRY
+* MODIFIED: 2012-01-15 - ADDED MULTI-LOCATION FALLBACK
+* MODIFIED: 2018-09-20 - ADDED BACKORDER CREATION
+* MODIFIED: 2022-04-10 - ADDED RESERVATION RETRY
+* -------------------------------------------------------
+DEFINE DATA
+PARAMETER
+  1 P-ORDER-ID            (N10)
+  1 P-LINE-NO             (N3)
+  1 P-PROD-ID             (N8)
+  1 P-SKU                 (A15)
+  1 P-LOC-TYPE            (A1)    /* S W A=AUTO-SELECT */
+  1 P-LOC-ID              (N4)    /* 0=AUTO-SELECT */
+  1 P-QTY                 (N8)
+  1 P-RESERVED-QTY        (N8)    /* ACTUAL QTY RESERVED */
+  1 P-RESERVATION-ID      (N10)   /* RETURNED RESERVATION ID */
+  1 P-BACKORDER-FLAG      (A1)    /* Y=BACKORDERED */
+  1 P-BACKORDER-QTY       (N8)    /* QUANTITY ON BACKORDER */
+  1 P-RC                  (N4)
+  1 P-RC-TEXT             (A80)
+*
+LOCAL USING INV-COPY
+LOCAL USING ERROR-COPY
+*
+LOCAL
+  1 #USER-ID              (A8)
+  1 #RES-SEQ              (N10)
+  1 #BO-SEQ               (N10)
+  1 #AVAILABLE-QTY        (N8)
+  1 #RESERVE-QTY          (N8)
+  1 #REMAINING-QTY        (N8)
+  1 #BEST-LOC-TYPE        (A1)
+  1 #BEST-LOC-ID          (N4)
+  1 #BEST-AVAILABLE       (N8)
+  1 #EXPIRY-DATE          (D)
+  1 #EXPIRY-DAYS          (N3)    INIT <3>  /* 3 DAY RESERVATION */
+  1 #INV-RESULT
+    2 #IR-ON-HAND         (N8)
+    2 #IR-RESERVED        (N8)
+    2 #IR-ALLOCATED       (N8)
+    2 #IR-DAMAGED         (N8)
+    2 #IR-IN-TRANSIT      (N8)
+    2 #IR-AVAILABLE       (N8)
+    2 #IR-SAFETY-STOCK    (N8)
+    2 #IR-REORDER-LEVEL   (N8)
+    2 #IR-BELOW-SAFETY    (A1)
+    2 #IR-BELOW-REORDER   (A1)
+    2 #IR-SUFFICIENT      (A1)
+  1 #INV-RC               (N4)
+  1 #INV-MSG              (A80)
+*
+* ADABAS FILE 105 - INVENTORY
+  1 INV-RES-VIEW VIEW OF INVENTORY-FILE
+    2 IR-PROD-ID           (N8)
+    2 IR-LOC-TYPE          (A1)
+    2 IR-LOC-ID            (N4)
+    2 IR-ON-HAND           (N8)
+    2 IR-RESERVED          (N8)
+    2 IR-AVAILABLE         (N8)
+*
+* ADABAS FILE 106 - RESERVATION
+  1 RES-VIEW VIEW OF RESERVATION-FILE
+    2 RS-ID                (N10)
+    2 RS-PROD-ID           (N8)
+    2 RS-SKU               (A15)
+    2 RS-LOC-TYPE          (A1)
+    2 RS-LOC-ID            (N4)
+    2 RS-ORDER-ID          (N10)
+    2 RS-QTY               (N8)
+    2 RS-STATUS            (A1)
+    2 RS-DATE              (D)
+    2 RS-EXPIRY-DATE       (D)
+    2 RS-CREATED-BY        (A8)
+*
+* ADABAS FILE - BACKORDER
+  1 BO-VIEW VIEW OF BACKORDER-FILE
+    2 BK-ID                (N10)
+    2 BK-ORDER-ID          (N10)
+    2 BK-LINE-NO           (N3)
+    2 BK-PROD-ID           (N8)
+    2 BK-SKU               (A15)
+    2 BK-QTY               (N8)
+    2 BK-STATUS            (A1)
+    2 BK-CREATED-DATE      (D)
+END-DEFINE
+*
+* -------------------------------------------------------
+* INITIALIZE
+* -------------------------------------------------------
+MOVE *USER TO #USER-ID
+RESET P-RC
+RESET P-RC-TEXT
+RESET P-RESERVED-QTY
+RESET P-RESERVATION-ID
+MOVE 'N' TO P-BACKORDER-FLAG
+RESET P-BACKORDER-QTY
+*
+IF P-QTY <= 0
+  MOVE ERR-ORD-INVALID-QTY TO P-RC
+  MOVE 'QUANTITY MUST BE GREATER THAN ZERO' TO P-RC-TEXT
+  ESCAPE ROUTINE
+END-IF
+*
+* -------------------------------------------------------
+* CALCULATE RESERVATION EXPIRY
+* MODIFIED 2004-06-22
+* -------------------------------------------------------
+COMPUTE #EXPIRY-DATE = *DATX + #EXPIRY-DAYS
+*
+* -------------------------------------------------------
+* AUTO-SELECT LOCATION IF REQUESTED
+* MODIFIED 2012-01-15 - MULTI-LOCATION FALLBACK
+* -------------------------------------------------------
+IF P-LOC-TYPE = 'A' OR P-LOC-ID = 0
+  PERFORM FIND-BEST-LOCATION
+  IF #BEST-LOC-ID = 0
+    * NO LOCATION HAS SUFFICIENT STOCK
+    * CREATE BACKORDER
+    PERFORM CREATE-BACKORDER
+    ESCAPE ROUTINE
+  END-IF
+  MOVE #BEST-LOC-TYPE TO P-LOC-TYPE
+  MOVE #BEST-LOC-ID   TO P-LOC-ID
+END-IF
+*
+* -------------------------------------------------------
+* CHECK AVAILABILITY AT SELECTED LOCATION
+* -------------------------------------------------------
+CALLNAT 'INVCHK'
+  P-PROD-ID P-SKU P-LOC-TYPE P-LOC-ID P-QTY
+  #INV-RESULT #INV-RC #INV-MSG
+*
+* DETERMINE HOW MUCH WE CAN RESERVE
+MOVE #IR-AVAILABLE TO #AVAILABLE-QTY
+IF #AVAILABLE-QTY >= P-QTY
+  MOVE P-QTY TO #RESERVE-QTY
+  RESET #REMAINING-QTY
+ELSE IF #AVAILABLE-QTY > 0
+  * PARTIAL RESERVATION
+  MOVE #AVAILABLE-QTY TO #RESERVE-QTY
+  COMPUTE #REMAINING-QTY = P-QTY - #AVAILABLE-QTY
+ELSE
+  * NO STOCK - BACKORDER ENTIRE QTY
+  MOVE 0 TO #RESERVE-QTY
+  MOVE P-QTY TO #REMAINING-QTY
+END-IF
+END-IF
+*
+* -------------------------------------------------------
+* CREATE RESERVATION IF QTY AVAILABLE
+* -------------------------------------------------------
+IF #RESERVE-QTY > 0
+  * GENERATE RESERVATION ID
+  CALLNAT 'SEQNON' 'RES' #RES-SEQ
+*
+  * UPDATE INVENTORY RESERVED COUNT
+  FIND INV-RES-VIEW WITH IR-PROD-ID = P-PROD-ID
+      AND IR-LOC-TYPE = P-LOC-TYPE
+      AND IR-LOC-ID = P-LOC-ID
+    GET INV-RES-VIEW *ISN (HOLD)
+*
+    ON ERROR
+      IF *ERROR-NR = 145
+        MOVE ERR-INV-LOCKED TO P-RC
+        MOVE 'INVENTORY RECORD LOCKED - RETRY' TO P-RC-TEXT
+        ESCAPE ROUTINE
+      END-IF
+    END-ERROR
+*
+    ADD #RESERVE-QTY TO IR-RESERVED
+    COMPUTE IR-AVAILABLE = IR-ON-HAND - IR-RESERVED
+      - IR-PROD-ID  /* BUG: SHOULD USE IR-ALLOCATED - LEGACY ISSUE */
+    * TEMPORARY FIX - RETAIN FOR BATCH PROCESS
+    * THE AVAILABLE CALC ABOVE HAS A KNOWN ISSUE
+    * CORRECT CALC IS DONE IN INVCHK
+    UPDATE INV-RES-VIEW
+    ESCAPE BOTTOM
+  END-FIND
+*
+  * CREATE RESERVATION RECORD
+  STORE RES-VIEW
+    RS-ID         := #RES-SEQ
+    RS-PROD-ID    := P-PROD-ID
+    RS-SKU        := P-SKU
+    RS-LOC-TYPE   := P-LOC-TYPE
+    RS-LOC-ID     := P-LOC-ID
+    RS-ORDER-ID   := P-ORDER-ID
+    RS-QTY        := #RESERVE-QTY
+    RS-STATUS     := 'R'
+    RS-DATE       := *DATX
+    RS-EXPIRY-DATE := #EXPIRY-DATE
+    RS-CREATED-BY := #USER-ID
+  END-STORE
+*
+  END OF TRANSACTION
+*
+  MOVE #RES-SEQ       TO P-RESERVATION-ID
+  MOVE #RESERVE-QTY   TO P-RESERVED-QTY
+END-IF
+*
+* -------------------------------------------------------
+* CREATE BACKORDER FOR REMAINING QUANTITY
+* MODIFIED 2018-09-20
+* -------------------------------------------------------
+IF #REMAINING-QTY > 0
+  PERFORM CREATE-BACKORDER
+END-IF
+*
+* -------------------------------------------------------
+* FIND BEST LOCATION WITH MOST STOCK
+* -------------------------------------------------------
+DEFINE SUBROUTINE FIND-BEST-LOCATION
+  RESET #BEST-LOC-ID
+  RESET #BEST-AVAILABLE
+*
+  READ INV-RES-VIEW BY IR-PROD-ID = P-PROD-ID
+    IF IR-PROD-ID NE P-PROD-ID
+      ESCAPE BOTTOM
+    END-IF
+    COMPUTE #AVAILABLE-QTY = IR-ON-HAND - IR-RESERVED
+    IF #AVAILABLE-QTY > #BEST-AVAILABLE
+      MOVE #AVAILABLE-QTY TO #BEST-AVAILABLE
+      MOVE IR-LOC-TYPE TO #BEST-LOC-TYPE
+      MOVE IR-LOC-ID   TO #BEST-LOC-ID
+    END-IF
+  END-READ
+END-SUBROUTINE
+*
+* -------------------------------------------------------
+* CREATE BACKORDER RECORD
+* -------------------------------------------------------
+DEFINE SUBROUTINE CREATE-BACKORDER
+  CALLNAT 'SEQNON' 'BO' #BO-SEQ
+  STORE BO-VIEW
+    BK-ID           := #BO-SEQ
+    BK-ORDER-ID     := P-ORDER-ID
+    BK-LINE-NO      := P-LINE-NO
+    BK-PROD-ID      := P-PROD-ID
+    BK-SKU          := P-SKU
+    BK-QTY          := #REMAINING-QTY
+    BK-STATUS       := 'P'
+    BK-CREATED-DATE := *DATX
+  END-STORE
+*
+  ON ERROR
+    CALLNAT 'LOGERR' 308 'FAILED TO CREATE BACKORDER'
+      'E' 'INVRES' #USER-ID
+  END-ERROR
+*
+  END OF TRANSACTION
+  MOVE 'Y' TO P-BACKORDER-FLAG
+  MOVE #REMAINING-QTY TO P-BACKORDER-QTY
+  MOVE ERR-INV-INSUFFICIENT TO P-RC
+  COMPRESS 'PARTIAL RESERVE:' P-RESERVED-QTY
+    'BACKORDERED:' #REMAINING-QTY INTO P-RC-TEXT
+END-SUBROUTINE
+*
+END

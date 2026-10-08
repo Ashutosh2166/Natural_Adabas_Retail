@@ -1,0 +1,186 @@
+* >Natural Source Code: INVADJ
+* SUBPROGRAM: INVADJ - STOCK ADJUSTMENT
+* DESCRIPTION: PROCESSES INVENTORY ADJUSTMENTS WITH
+*              APPROVAL WORKFLOW AND AUDIT TRAIL
+* LIBRARY: RETAILCORE
+* ADABAS FILES: 105 (INVENTORY), 107 (ADJUSTMENT)
+* CREATED: 1999-06-15  K. PATEL
+* MODIFIED: 2006-10-22 - ADDED APPROVAL WORKFLOW
+* MODIFIED: 2014-08-15 - ADDED ADJUSTMENT LIMIT
+* MODIFIED: 2021-02-28 - ADDED REASON CODE VALIDATION
+* -------------------------------------------------------
+DEFINE DATA
+PARAMETER
+  1 P-PROD-ID             (N8)
+  1 P-SKU                 (A15)
+  1 P-LOC-TYPE            (A1)
+  1 P-LOC-ID              (N4)
+  1 P-ADJ-QTY             (N8)    /* SIGNED +/- */
+  1 P-REASON-CODE         (A4)    /* DMGD SHRK FNDC RCNT CORR RETN */
+  1 P-REASON-TEXT         (A60)
+  1 P-ADJUSTMENT-ID       (N10)   /* RETURNED */
+  1 P-RC                  (N4)
+  1 P-RC-TEXT             (A80)
+*
+LOCAL
+  1 #USER-ID              (A8)
+  1 #ADJ-SEQ              (N10)
+  1 #ADJ-LIMIT            (N8)     INIT <1000>
+  1 #AUTO-APPROVE         (A1)     INIT <'N'>
+  1 #ABS-QTY              (N8)
+  1 #OLD-ON-HAND          (N8)
+  1 #NEW-ON-HAND          (N8)
+  1 #CONFIG-VALUE         (A80)
+  1 #CONFIG-NUM           (N11.2)
+  1 #CONFIG-DATE          (D)
+  1 #CONFIG-FLAG          (A1)
+  1 #CONFIG-FOUND         (A1)
+  1 #ADJ-STR              (A15)
+*
+  1 INV-ADJ-VIEW VIEW OF INVENTORY-FILE
+    2 IA-PROD-ID           (N8)
+    2 IA-LOC-TYPE          (A1)
+    2 IA-LOC-ID            (N4)
+    2 IA-ON-HAND           (N8)
+    2 IA-AVAILABLE         (N8)
+    2 IA-RESERVED          (N8)
+    2 IA-ALLOCATED         (N8)
+    2 IA-DAMAGED           (N8)
+*
+  1 ADJ-VIEW VIEW OF ADJUSTMENT-FILE
+    2 AJ-ID                (N10)
+    2 AJ-PROD-ID           (N8)
+    2 AJ-SKU               (A15)
+    2 AJ-LOC-TYPE          (A1)
+    2 AJ-LOC-ID            (N4)
+    2 AJ-QTY               (N8)
+    2 AJ-REASON            (A4)
+    2 AJ-REASON-TEXT       (A60)
+    2 AJ-OLD-ON-HAND       (N8)
+    2 AJ-NEW-ON-HAND       (N8)
+    2 AJ-STATUS            (A1)
+    2 AJ-DATE              (D)
+    2 AJ-APPROVED-BY       (A8)
+    2 AJ-CREATED-BY        (A8)
+END-DEFINE
+*
+MOVE *USER TO #USER-ID
+RESET P-RC
+*
+* -------------------------------------------------------
+* VALIDATE REASON CODE
+* MODIFIED 2021-02-28
+* -------------------------------------------------------
+IF P-REASON-CODE NE 'DMGD' AND P-REASON-CODE NE 'SHRK'
+    AND P-REASON-CODE NE 'FNDC' AND P-REASON-CODE NE 'RCNT'
+    AND P-REASON-CODE NE 'CORR' AND P-REASON-CODE NE 'RETN'
+  MOVE 309 TO P-RC
+  MOVE 'INVALID ADJUSTMENT REASON CODE' TO P-RC-TEXT
+  ESCAPE ROUTINE
+END-IF
+*
+IF P-ADJ-QTY = 0
+  MOVE 309 TO P-RC
+  MOVE 'ADJUSTMENT QUANTITY CANNOT BE ZERO' TO P-RC-TEXT
+  ESCAPE ROUTINE
+END-IF
+*
+* -------------------------------------------------------
+* CHECK ADJUSTMENT LIMIT
+* MODIFIED 2014-08-15
+* -------------------------------------------------------
+CALLNAT 'CONFIGN' 'INV.ADJ.LIMIT'
+  #CONFIG-VALUE #CONFIG-NUM #CONFIG-DATE #CONFIG-FLAG #CONFIG-FOUND
+IF #CONFIG-FOUND = 'Y'
+  MOVE #CONFIG-NUM TO #ADJ-LIMIT
+END-IF
+*
+MOVE P-ADJ-QTY TO #ABS-QTY
+IF #ABS-QTY < 0
+  MULTIPLY #ABS-QTY BY -1
+END-IF
+*
+IF #ABS-QTY > #ADJ-LIMIT
+  * LARGE ADJUSTMENT - REQUIRES APPROVAL
+  MOVE 'N' TO #AUTO-APPROVE
+ELSE
+  MOVE 'Y' TO #AUTO-APPROVE
+END-IF
+*
+* -------------------------------------------------------
+* GET CURRENT INVENTORY
+* -------------------------------------------------------
+FIND INV-ADJ-VIEW WITH IA-PROD-ID = P-PROD-ID
+    AND IA-LOC-TYPE = P-LOC-TYPE
+    AND IA-LOC-ID = P-LOC-ID
+  IF NO RECORDS FOUND
+    MOVE 300 TO P-RC
+    MOVE 'INVENTORY RECORD NOT FOUND' TO P-RC-TEXT
+    ESCAPE ROUTINE
+  END-NOREC
+*
+  MOVE IA-ON-HAND TO #OLD-ON-HAND
+  COMPUTE #NEW-ON-HAND = IA-ON-HAND + P-ADJ-QTY
+*
+  IF #NEW-ON-HAND < 0
+    MOVE 304 TO P-RC
+    MOVE 'ADJUSTMENT WOULD RESULT IN NEGATIVE INVENTORY' TO P-RC-TEXT
+    ESCAPE ROUTINE
+  END-IF
+  ESCAPE BOTTOM
+END-FIND
+*
+* -------------------------------------------------------
+* CREATE ADJUSTMENT RECORD
+* -------------------------------------------------------
+CALLNAT 'SEQNON' 'ADJ' #ADJ-SEQ
+*
+STORE ADJ-VIEW
+  AJ-ID           := #ADJ-SEQ
+  AJ-PROD-ID      := P-PROD-ID
+  AJ-SKU          := P-SKU
+  AJ-LOC-TYPE     := P-LOC-TYPE
+  AJ-LOC-ID       := P-LOC-ID
+  AJ-QTY          := P-ADJ-QTY
+  AJ-REASON       := P-REASON-CODE
+  AJ-REASON-TEXT  := P-REASON-TEXT
+  AJ-OLD-ON-HAND  := #OLD-ON-HAND
+  AJ-NEW-ON-HAND  := #NEW-ON-HAND
+  AJ-DATE         := *DATX
+  AJ-CREATED-BY   := #USER-ID
+END-STORE
+*
+* AUTO-APPROVE IF WITHIN LIMIT
+IF #AUTO-APPROVE = 'Y'
+  * APPLY ADJUSTMENT DIRECTLY
+  CALLNAT 'INVUPD' P-PROD-ID P-LOC-TYPE P-LOC-ID
+    'ADJT' P-ADJ-QTY P-REASON-TEXT P-RC P-RC-TEXT
+*
+  IF P-RC = 0
+    * UPDATE ADJUSTMENT STATUS TO APPROVED
+    FIND ADJ-VIEW WITH AJ-ID = #ADJ-SEQ
+      GET ADJ-VIEW *ISN (HOLD)
+      MOVE 'A' TO AJ-STATUS
+      MOVE #USER-ID TO AJ-APPROVED-BY
+      UPDATE ADJ-VIEW
+      ESCAPE BOTTOM
+    END-FIND
+  END-IF
+ELSE
+  * SET TO PENDING APPROVAL
+  FIND ADJ-VIEW WITH AJ-ID = #ADJ-SEQ
+    GET ADJ-VIEW *ISN (HOLD)
+    MOVE 'P' TO AJ-STATUS
+    UPDATE ADJ-VIEW
+    ESCAPE BOTTOM
+  END-FIND
+END-IF
+*
+END OF TRANSACTION
+*
+MOVE #ADJ-SEQ TO P-ADJUSTMENT-ID
+MOVE #ADJ-SEQ TO #ADJ-STR
+CALLNAT 'AUDITN' 'ADJ' #ADJ-STR 'C' P-REASON-CODE
+  ' ' ' ' P-REASON-TEXT
+*
+END

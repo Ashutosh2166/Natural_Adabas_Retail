@@ -1,0 +1,137 @@
+* >Natural Source Code: ORD-COPY
+* RETAILCORE - ORDER DATA DEFINITIONS
+* SHARED BY ALL ORDER-RELATED PROGRAMS
+* CREATED: 1998-04-10
+* MODIFIED: 2006-02-14 - ADDED ORDER SOURCE FIELDS
+* MODIFIED: 2013-08-20 - ADDED WEB ORDER SUPPORT
+* MODIFIED: 2019-04-05 - ADDED ORDER PRIORITY
+* MODIFIED: 2023-09-12 - ADDED FRAUD CHECK FIELDS
+* -------------------------------------------------------
+*
+* ORDER HEADER RECORD
+*
+1 ORDER-HEADER
+  2 ORD-ID                (N10)   /* ORDER IDENTIFIER */
+  2 ORD-NUMBER            (A12)   /* DISPLAY ORDER NUMBER */
+  2 ORD-CUST-ID           (N8)    /* CUSTOMER */
+  2 ORD-STORE-ID          (N4)    /* ORIGINATING STORE - 0=WEB */
+  2 ORD-STATUS            (A3)    /* NEW VAL RES CON PAD ALC SHP CMP CAN RET */
+  2 ORD-TYPE              (A2)    /* ST=STORE WB=WEB PH=PHONE MO=MAIL */
+  2 ORD-SOURCE            (A4)    /* POS WEB MOB CSR */
+  2 ORD-PRIORITY          (N1)    /* 1=RUSH 2=HIGH 3=NORMAL 4=LOW */
+  2 ORD-DATE              (D)     /* ORDER DATE */
+  2 ORD-TIME              (T)     /* ORDER TIMESTAMP */
+  2 ORD-PROMISED-DATE     (D)     /* PROMISED DELIVERY DATE */
+  2 ORD-SHIP-METHOD       (A4)    /* STD EXP OVN PUP */
+  2 ORD-NUM-LINES         (N3)    /* NUMBER OF ORDER LINES */
+  2 ORD-TOTAL-QTY         (N6)    /* TOTAL QUANTITY */
+*
+* ORDER FINANCIAL
+*
+1 ORDER-FINANCIAL
+  2 ORD-SUBTOTAL          (N11.2) /* SUBTOTAL BEFORE TAX */
+  2 ORD-DISCOUNT-AMT      (N9.2)  /* TOTAL DISCOUNT */
+  2 ORD-TAX-AMT           (N9.2)  /* TAX AMOUNT */
+  2 ORD-SHIPPING-AMT      (N7.2)  /* SHIPPING CHARGE */
+  2 ORD-TOTAL-AMT         (N11.2) /* ORDER TOTAL */
+  2 ORD-PAID-AMT          (N11.2) /* AMOUNT PAID */
+  2 ORD-BALANCE-DUE       (N11.2) /* REMAINING BALANCE */
+  2 ORD-CURRENCY          (A3)    /* CURRENCY CODE */
+*
+* ORDER SHIPPING ADDRESS
+*
+1 ORDER-SHIP-ADDR
+  2 OS-NAME               (A60)
+  2 OS-ADDR-LINE1         (A40)
+  2 OS-ADDR-LINE2         (A40)
+  2 OS-CITY               (A30)
+  2 OS-STATE              (A2)
+  2 OS-ZIP                (A10)
+  2 OS-COUNTRY            (A3)
+  2 OS-PHONE              (A20)
+*
+* ORDER BILLING ADDRESS
+*
+1 ORDER-BILL-ADDR
+  2 OB-NAME               (A60)
+  2 OB-ADDR-LINE1         (A40)
+  2 OB-ADDR-LINE2         (A40)
+  2 OB-CITY               (A30)
+  2 OB-STATE              (A2)
+  2 OB-ZIP                (A10)
+  2 OB-COUNTRY            (A3)
+*
+* ORDER LINE RECORD
+*
+1 ORDER-LINE-DATA
+  2 OL-ORDER-ID           (N10)   /* ORDER REFERENCE */
+  2 OL-LINE-NO            (N3)    /* LINE NUMBER */
+  2 OL-PROD-ID            (N8)    /* PRODUCT */
+  2 OL-SKU                (A15)   /* SKU */
+  2 OL-DESCRIPTION        (A60)   /* ITEM DESCRIPTION */
+  2 OL-QTY-ORDERED        (N6)    /* QUANTITY ORDERED */
+  2 OL-QTY-RESERVED       (N6)    /* QUANTITY RESERVED */
+  2 OL-QTY-ALLOCATED      (N6)    /* QUANTITY ALLOCATED */
+  2 OL-QTY-SHIPPED        (N6)    /* QUANTITY SHIPPED */
+  2 OL-QTY-CANCELLED      (N6)    /* QUANTITY CANCELLED */
+  2 OL-QTY-RETURNED       (N6)    /* QUANTITY RETURNED */
+  2 OL-UNIT-PRICE         (N9.2)  /* UNIT PRICE */
+  2 OL-ORIG-PRICE         (N9.2)  /* ORIGINAL PRICE BEFORE DISCOUNT */
+  2 OL-DISCOUNT-AMT       (N9.2)  /* LINE DISCOUNT */
+  2 OL-DISCOUNT-PCT       (N5.2)  /* DISCOUNT PERCENTAGE */
+  2 OL-TAX-AMT            (N9.2)  /* LINE TAX */
+  2 OL-LINE-TOTAL         (N11.2) /* LINE TOTAL */
+  2 OL-STATUS             (A3)    /* NEW RES ALC SHP CAN RET */
+  2 OL-PROMO-ID           (N8)    /* APPLIED PROMOTION */
+  2 OL-COUPON-CODE        (A15)   /* APPLIED COUPON */
+  2 OL-FULFILL-LOC-TYPE   (A1)    /* S W */
+  2 OL-FULFILL-LOC-ID     (N4)    /* FULFILLMENT LOCATION */
+  2 OL-GIFT-FLAG          (A1)    /* Y N */
+  2 OL-GIFT-MESSAGE       (A100)
+*
+* ORDER NOTES
+*
+1 ORDER-NOTES
+  2 ON-ORDER-ID           (N10)
+  2 ON-NOTE-SEQ           (N3)
+  2 ON-NOTE-TYPE          (A1)    /* C=CUSTOMER I=INTERNAL S=SYSTEM */
+  2 ON-NOTE-TEXT           (A200)
+  2 ON-NOTE-DATE           (D)
+  2 ON-NOTE-USER           (A8)
+*
+* ORDER HISTORY - STATUS TRANSITIONS
+*
+1 ORDER-HISTORY-REC
+  2 OH-ORDER-ID           (N10)
+  2 OH-SEQ-NO             (N4)
+  2 OH-OLD-STATUS         (A3)
+  2 OH-NEW-STATUS         (A3)
+  2 OH-CHANGE-DATE        (D)
+  2 OH-CHANGE-TIME        (T)
+  2 OH-CHANGE-USER        (A8)
+  2 OH-CHANGE-REASON      (A60)
+  2 OH-CHANGE-PROGRAM     (A8)
+*
+* FRAUD CHECK - ADDED 2023
+*
+1 ORDER-FRAUD-CHECK
+  2 OF-FRAUD-SCORE        (N3)    /* 0-100 RISK SCORE */
+  2 OF-FRAUD-FLAG         (A1)    /* Y=FLAGGED N=OK R=REVIEW */
+  2 OF-FRAUD-REASON       (A60)
+  2 OF-CHECK-DATE         (D)
+*
+* ORDER SEARCH PARAMETERS
+*
+1 ORDER-SEARCH
+  2 ORS-SEARCH-ID         (N10)
+  2 ORS-SEARCH-NUMBER     (A12)
+  2 ORS-SEARCH-CUST       (N8)
+  2 ORS-SEARCH-STORE      (N4)
+  2 ORS-SEARCH-STATUS     (A3)
+  2 ORS-SEARCH-FROM-DATE  (D)
+  2 ORS-SEARCH-TO-DATE    (D)
+  2 ORS-SEARCH-TYPE       (A2)
+  2 ORS-FOUND-FLAG        (A1)
+  2 ORS-RECORD-COUNT      (N5)
+*
+END-DEFINE

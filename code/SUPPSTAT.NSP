@@ -1,0 +1,338 @@
+* >Natural Source Code: SUPPSTAT
+* PROGRAM: SUPPSTAT - SUPPLIER STATUS & PERFORMANCE REPORT
+* DESCRIPTION: SUPPLIER PERFORMANCE SCORECARD REPORT
+*              PO ANALYSIS, ON-TIME DELIVERY, QUALITY METRICS
+*              ACTIVE/INACTIVE SUPPLIER SUMMARY
+* LIBRARY: RETAILCORE
+* ADABAS FILES: 130 (SUPPLIER), 131 (PO-HEADER), 132 (PO-LINE)
+* CREATED: 2007-03-15  J. THOMPSON
+* MODIFIED: 2014-10-22 - ADDED PERFORMANCE SCORING
+* MODIFIED: 2020-07-10 - ADDED TREND ANALYSIS
+* -------------------------------------------------------
+DEFINE DATA
+LOCAL
+  1 #START-DATE           (D)
+  1 #END-DATE             (D)
+*
+* SUPPLIER ARRAY - MAX 200
+  1 #MAX-SUPPS            (N4)   INIT <200>
+  1 #SUPP-COUNT           (N4)
+  1 #SUPP-DATA (1:200)
+    2 #SP-ID              (N8)
+    2 #SP-NAME            (A40)
+    2 #SP-STATUS          (A1)
+    2 #SP-LEAD-TIME       (N3)
+    2 #SP-PAY-TERMS       (A10)
+    2 #SP-RATING          (N3.1)
+    2 #SP-TOTAL-POS       (N6)
+    2 #SP-TOTAL-AMT       (N13.2)
+    2 #SP-RECEIVED-POS    (N6)
+    2 #SP-RECEIVED-AMT    (N13.2)
+    2 #SP-LATE-POS        (N6)
+    2 #SP-ON-TIME-PCT     (N5.1)
+    2 #SP-QTY-ORDERED     (N10)
+    2 #SP-QTY-RECEIVED    (N10)
+    2 #SP-QTY-DAMAGED     (N10)
+    2 #SP-FILL-RATE       (N5.1)
+    2 #SP-QUALITY-PCT     (N5.1)
+    2 #SP-AVG-PO-AMT      (N11.2)
+    2 #SP-SCORE           (N5.1)
+    2 #SP-GRADE           (A1)
+    2 #SP-OPEN-POS        (N6)
+    2 #SP-OPEN-AMT        (N13.2)
+*
+* SUMMARY
+  1 #ACTIVE-SUPPLIERS     (N6)
+  1 #INACTIVE-SUPPLIERS   (N6)
+  1 #PROBATION-SUPPLIERS  (N6)
+  1 #TOTAL-PO-COUNT       (N8)
+  1 #TOTAL-PO-AMT         (N13.2)
+  1 #TOTAL-OPEN-POS       (N8)
+  1 #TOTAL-OPEN-AMT       (N13.2)
+  1 #GRADE-A-COUNT        (N6)
+  1 #GRADE-B-COUNT        (N6)
+  1 #GRADE-C-COUNT        (N6)
+  1 #GRADE-D-COUNT        (N6)
+  1 #GRADE-F-COUNT        (N6)
+*
+  1 #IDX                  (N4)
+  1 #FOUND                (L)
+*
+  1 SSV-VIEW VIEW OF SUPPLIER-FILE
+    2 SSV-ID              (N8)
+    2 SSV-NAME            (A40)
+    2 SSV-STATUS          (A1)
+    2 SSV-LEAD-TIME-DAYS  (N3)
+    2 SSV-PAYMENT-TERMS   (A10)
+    2 SSV-RATING          (N3.1)
+    2 SSV-ON-TIME-PCT     (N5.1)
+    2 SSV-QUALITY-PCT     (N5.1)
+    2 SSV-FILL-RATE       (N5.1)
+*
+  1 SPV-VIEW VIEW OF PO-HEADER-FILE
+    2 SPV-ID              (N10)
+    2 SPV-SUPP-ID         (N8)
+    2 SPV-STATUS          (A2)
+    2 SPV-TOTAL-AMT       (N11.2)
+    2 SPV-ORDER-DATE      (D)
+    2 SPV-EXPECTED-DATE   (D)
+    2 SPV-RECEIVED-DATE   (D)
+*
+  1 SLV-VIEW VIEW OF PO-LINE-FILE
+    2 SLV-PO-ID           (N10)
+    2 SLV-QTY-ORDERED     (N6)
+    2 SLV-QTY-RECEIVED    (N6)
+    2 SLV-QTY-DAMAGED     (N6)
+    2 SLV-STATUS          (A2)
+END-DEFINE
+*
+* -------------------------------------------------------
+* SETUP REPORT PERIOD - DEFAULT LAST 12 MONTHS
+* -------------------------------------------------------
+MOVE *DATX TO #END-DATE
+MOVE #END-DATE TO #START-DATE
+SUBTRACT 365 FROM #START-DATE (D)
+*
+* -------------------------------------------------------
+* STEP 1: LOAD ALL SUPPLIERS
+* -------------------------------------------------------
+READ SSV-VIEW BY SSV-ID
+  IF #SUPP-COUNT >= #MAX-SUPPS
+    ESCAPE BOTTOM
+  END-IF
+  ADD 1 TO #SUPP-COUNT
+  MOVE SSV-ID              TO #SP-ID(#SUPP-COUNT)
+  MOVE SSV-NAME            TO #SP-NAME(#SUPP-COUNT)
+  MOVE SSV-STATUS          TO #SP-STATUS(#SUPP-COUNT)
+  MOVE SSV-LEAD-TIME-DAYS  TO #SP-LEAD-TIME(#SUPP-COUNT)
+  MOVE SSV-PAYMENT-TERMS   TO #SP-PAY-TERMS(#SUPP-COUNT)
+  MOVE SSV-RATING          TO #SP-RATING(#SUPP-COUNT)
+*
+  DECIDE ON FIRST VALUE OF SSV-STATUS
+    VALUE 'A'
+      ADD 1 TO #ACTIVE-SUPPLIERS
+    VALUE 'I'
+      ADD 1 TO #INACTIVE-SUPPLIERS
+    VALUE 'P'
+      ADD 1 TO #PROBATION-SUPPLIERS
+    NONE VALUE
+      ADD 1 TO #INACTIVE-SUPPLIERS
+  END-DECIDE
+END-READ
+*
+* -------------------------------------------------------
+* STEP 2: PROCESS PO DATA
+* -------------------------------------------------------
+FIND SPV-VIEW WITH SPV-ORDER-DATE GE #START-DATE
+    AND SPV-ORDER-DATE LE #END-DATE
+  IF SPV-STATUS = 'CA'
+    ESCAPE TOP
+  END-IF
+*
+  * FIND SUPPLIER INDEX
+  MOVE FALSE TO #FOUND
+  FOR #IDX = 1 TO #SUPP-COUNT
+    IF #SP-ID(#IDX) = SPV-SUPP-ID
+      MOVE TRUE TO #FOUND
+      ESCAPE BOTTOM
+    END-IF
+  END-FOR
+  IF NOT #FOUND
+    ESCAPE TOP
+  END-IF
+*
+  ADD 1 TO #SP-TOTAL-POS(#IDX)
+  ADD SPV-TOTAL-AMT TO #SP-TOTAL-AMT(#IDX)
+  ADD 1 TO #TOTAL-PO-COUNT
+  ADD SPV-TOTAL-AMT TO #TOTAL-PO-AMT
+*
+  * CHECK IF RECEIVED
+  IF SPV-STATUS = 'RC' OR SPV-STATUS = 'PR' OR SPV-STATUS = 'CL'
+    ADD 1 TO #SP-RECEIVED-POS(#IDX)
+    ADD SPV-TOTAL-AMT TO #SP-RECEIVED-AMT(#IDX)
+*
+    * CHECK ON-TIME (3-DAY GRACE PERIOD)
+    IF SPV-RECEIVED-DATE > 0 AND SPV-EXPECTED-DATE > 0
+      1 #GRACE-DATE (D)
+      MOVE SPV-EXPECTED-DATE TO #GRACE-DATE
+      ADD 3 TO #GRACE-DATE (D)
+      IF SPV-RECEIVED-DATE > #GRACE-DATE
+        ADD 1 TO #SP-LATE-POS(#IDX)
+      END-IF
+    END-IF
+  END-IF
+*
+  * CHECK OPEN POS
+  IF SPV-STATUS = 'DR' OR SPV-STATUS = 'SB'
+      OR SPV-STATUS = 'AP' OR SPV-STATUS = 'SH'
+    ADD 1 TO #SP-OPEN-POS(#IDX)
+    ADD SPV-TOTAL-AMT TO #SP-OPEN-AMT(#IDX)
+    ADD 1 TO #TOTAL-OPEN-POS
+    ADD SPV-TOTAL-AMT TO #TOTAL-OPEN-AMT
+  END-IF
+*
+  * GET LINE DETAILS
+  FIND SLV-VIEW WITH SLV-PO-ID = SPV-ID
+    IF SLV-STATUS NE 'CA'
+      ADD SLV-QTY-ORDERED  TO #SP-QTY-ORDERED(#IDX)
+      ADD SLV-QTY-RECEIVED TO #SP-QTY-RECEIVED(#IDX)
+      ADD SLV-QTY-DAMAGED  TO #SP-QTY-DAMAGED(#IDX)
+    END-IF
+  END-FIND
+*
+  IF *COUNTER > 100000
+    ESCAPE BOTTOM
+  END-IF
+END-FIND
+*
+* -------------------------------------------------------
+* STEP 3: CALCULATE PERFORMANCE METRICS
+* -------------------------------------------------------
+FOR #IDX = 1 TO #SUPP-COUNT
+  IF #SP-TOTAL-POS(#IDX) = 0
+    ESCAPE TOP
+  END-IF
+*
+  * ON-TIME %
+  IF #SP-RECEIVED-POS(#IDX) > 0
+    COMPUTE #SP-ON-TIME-PCT(#IDX) =
+      (#SP-RECEIVED-POS(#IDX) - #SP-LATE-POS(#IDX))
+      / #SP-RECEIVED-POS(#IDX) * 100
+  END-IF
+*
+  * FILL RATE
+  IF #SP-QTY-ORDERED(#IDX) > 0
+    COMPUTE #SP-FILL-RATE(#IDX) =
+      #SP-QTY-RECEIVED(#IDX) / #SP-QTY-ORDERED(#IDX) * 100
+    IF #SP-FILL-RATE(#IDX) > 100
+      MOVE 100 TO #SP-FILL-RATE(#IDX)
+    END-IF
+  END-IF
+*
+  * QUALITY %
+  IF #SP-QTY-RECEIVED(#IDX) > 0
+    COMPUTE #SP-QUALITY-PCT(#IDX) =
+      (#SP-QTY-RECEIVED(#IDX) - #SP-QTY-DAMAGED(#IDX))
+      / #SP-QTY-RECEIVED(#IDX) * 100
+  END-IF
+*
+  * AVG PO AMOUNT
+  COMPUTE #SP-AVG-PO-AMT(#IDX) =
+    #SP-TOTAL-AMT(#IDX) / #SP-TOTAL-POS(#IDX)
+*
+  * OVERALL SCORE (40% ON-TIME + 30% QUALITY + 30% FILL-RATE)
+  COMPUTE #SP-SCORE(#IDX) =
+    #SP-ON-TIME-PCT(#IDX) * 0.40 +
+    #SP-QUALITY-PCT(#IDX) * 0.30 +
+    #SP-FILL-RATE(#IDX) * 0.30
+*
+  * GRADE
+  IF #SP-SCORE(#IDX) >= 90
+    MOVE 'A' TO #SP-GRADE(#IDX)
+    ADD 1 TO #GRADE-A-COUNT
+  ELSE IF #SP-SCORE(#IDX) >= 80
+    MOVE 'B' TO #SP-GRADE(#IDX)
+    ADD 1 TO #GRADE-B-COUNT
+  ELSE IF #SP-SCORE(#IDX) >= 70
+    MOVE 'C' TO #SP-GRADE(#IDX)
+    ADD 1 TO #GRADE-C-COUNT
+  ELSE IF #SP-SCORE(#IDX) >= 60
+    MOVE 'D' TO #SP-GRADE(#IDX)
+    ADD 1 TO #GRADE-D-COUNT
+  ELSE
+    MOVE 'F' TO #SP-GRADE(#IDX)
+    ADD 1 TO #GRADE-F-COUNT
+  END-IF
+  END-IF
+  END-IF
+  END-IF
+END-FOR
+*
+* -------------------------------------------------------
+* OUTPUT REPORT
+* -------------------------------------------------------
+WRITE 'RETAILCORE - SUPPLIER STATUS & PERFORMANCE REPORT'
+WRITE '=================================================='
+WRITE 'PERIOD:' #START-DATE 'TO' #END-DATE
+WRITE 'RUN DATE:' *DATX
+WRITE ' '
+*
+* SUPPLIER DETAIL
+WRITE 'SUPPLIER PERFORMANCE SCORECARD'
+WRITE '=============================='
+WRITE 'SUPP-ID  SUPPLIER NAME                     ST  POS'
+  '  TOTAL AMT      ON-TIME  FILL%  QUAL%  SCORE GR'
+WRITE '-------- --------------------------------  --  ---'
+  '  -----------    -------  -----  -----  ----- --'
+*
+FOR #IDX = 1 TO #SUPP-COUNT
+  IF #SP-TOTAL-POS(#IDX) > 0
+    WRITE #SP-ID(#IDX)
+      #SP-NAME(#IDX) (EM=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX)
+      #SP-STATUS(#IDX) #SP-TOTAL-POS(#IDX)
+      #SP-TOTAL-AMT(#IDX)
+      #SP-ON-TIME-PCT(#IDX) '%'
+      #SP-FILL-RATE(#IDX) '%'
+      #SP-QUALITY-PCT(#IDX) '%'
+      #SP-SCORE(#IDX) #SP-GRADE(#IDX)
+  END-IF
+END-FOR
+*
+* OPEN PO SUMMARY
+WRITE ' '
+WRITE 'OPEN PURCHASE ORDERS BY SUPPLIER'
+WRITE '================================'
+WRITE 'SUPP-ID  SUPPLIER NAME                     OPEN POS  OPEN AMOUNT'
+WRITE '-------- --------------------------------  --------  -----------'
+*
+FOR #IDX = 1 TO #SUPP-COUNT
+  IF #SP-OPEN-POS(#IDX) > 0
+    WRITE #SP-ID(#IDX)
+      #SP-NAME(#IDX) (EM=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX)
+      #SP-OPEN-POS(#IDX) #SP-OPEN-AMT(#IDX)
+  END-IF
+END-FOR
+*
+* GRADE DISTRIBUTION
+WRITE ' '
+WRITE 'PERFORMANCE GRADE DISTRIBUTION'
+WRITE '=============================='
+WRITE 'GRADE A (90-100) EXCELLENT  :' #GRADE-A-COUNT
+WRITE 'GRADE B (80-89)  GOOD       :' #GRADE-B-COUNT
+WRITE 'GRADE C (70-79)  ACCEPTABLE :' #GRADE-C-COUNT
+WRITE 'GRADE D (60-69)  POOR       :' #GRADE-D-COUNT
+WRITE 'GRADE F (<60)    FAILING    :' #GRADE-F-COUNT
+*
+* UNDERPERFORMING SUPPLIERS
+WRITE ' '
+WRITE 'UNDERPERFORMING SUPPLIERS (GRADE D OR F)'
+WRITE '========================================='
+FOR #IDX = 1 TO #SUPP-COUNT
+  IF #SP-GRADE(#IDX) = 'D' OR #SP-GRADE(#IDX) = 'F'
+    WRITE '** SUPPLIER:' #SP-ID(#IDX) #SP-NAME(#IDX)
+    WRITE '   SCORE:' #SP-SCORE(#IDX) 'GRADE:' #SP-GRADE(#IDX)
+    WRITE '   ON-TIME:' #SP-ON-TIME-PCT(#IDX) '%'
+      'QUALITY:' #SP-QUALITY-PCT(#IDX) '%'
+      'FILL-RATE:' #SP-FILL-RATE(#IDX) '%'
+    WRITE '   LATE POS:' #SP-LATE-POS(#IDX)
+      'DAMAGED QTY:' #SP-QTY-DAMAGED(#IDX)
+  END-IF
+END-FOR
+*
+* OVERALL SUMMARY
+WRITE ' '
+WRITE 'SUMMARY'
+WRITE '======='
+WRITE 'TOTAL SUPPLIERS       :' #SUPP-COUNT
+WRITE 'ACTIVE                :' #ACTIVE-SUPPLIERS
+WRITE 'INACTIVE              :' #INACTIVE-SUPPLIERS
+WRITE 'ON PROBATION          :' #PROBATION-SUPPLIERS
+WRITE 'TOTAL POS IN PERIOD   :' #TOTAL-PO-COUNT
+WRITE 'TOTAL PO AMOUNT       :' #TOTAL-PO-AMT
+WRITE 'OPEN POS              :' #TOTAL-OPEN-POS
+WRITE 'OPEN PO AMOUNT        :' #TOTAL-OPEN-AMT
+*
+WRITE ' '
+WRITE 'END OF REPORT'
+*
+END

@@ -1,0 +1,120 @@
+* >Natural Source Code: ABORTN
+* SUBPROGRAM: ABORTN - ABNORMAL TERMINATION HANDLER
+* DESCRIPTION: HANDLES ABNORMAL PROGRAM TERMINATION
+*              LOGS THE ERROR AND PERFORMS CLEANUP
+* LIBRARY: RETAILCORE
+* CREATED: 1998-04-01  R. PETERSON
+* MODIFIED: 2005-08-22 - ADDED DATABASE ERROR LOGGING
+* MODIFIED: 2012-11-15 - ADDED TERMINAL OUTPUT FOR ONLINE
+* MODIFIED: 2019-03-10 - ADDED BATCH RUN ID TRACKING
+* -------------------------------------------------------
+DEFINE DATA
+PARAMETER
+  1 P-ERROR-CODE          (N4)
+  1 P-ERROR-TEXT           (A80)
+  1 P-MODULE-NAME         (A8)
+*
+LOCAL
+  1 #TIMESTAMP            (T)
+  1 #DATE-DISPLAY         (A10)
+  1 #TIME-DISPLAY         (A8)
+  1 #USER-ID              (A8)
+  1 #TERMINAL-ID          (A8)
+  1 #SEVERITY             (A1)
+  1 #LOG-RC               (N4)
+  1 #LOG-TEXT              (A80)
+  1 #ONLINE-FLAG          (A1)
+  1 #BATCH-RUN-ID         (A12)
+  1 #FORMATTED-MSG        (A132)
+*
+  1 ERROR-LOG-RECORD
+    2 EL-TIMESTAMP        (T)
+    2 EL-DATE             (D)
+    2 EL-ERROR-CODE       (N4)
+    2 EL-ERROR-TEXT        (A80)
+    2 EL-MODULE            (A8)
+    2 EL-USER              (A8)
+    2 EL-TERMINAL          (A8)
+    2 EL-SEVERITY          (A1)
+    2 EL-BATCH-ID          (A12)
+END-DEFINE
+*
+* -------------------------------------------------------
+* DETERMINE EXECUTION CONTEXT
+* -------------------------------------------------------
+MOVE *TIMESTMP TO #TIMESTAMP
+MOVE *DATX     TO #DATE-DISPLAY
+MOVE *TIMX     TO #TIME-DISPLAY
+MOVE *USER     TO #USER-ID
+*
+MOVE *INIT-ID  TO #TERMINAL-ID
+*
+* DETERMINE IF ONLINE OR BATCH
+IF #TERMINAL-ID = ' '
+  MOVE 'N' TO #ONLINE-FLAG
+ELSE
+  MOVE 'Y' TO #ONLINE-FLAG
+END-IF
+*
+* -------------------------------------------------------
+* SET SEVERITY BASED ON ERROR CODE RANGE
+* -------------------------------------------------------
+DECIDE FOR FIRST CONDITION
+  WHEN P-ERROR-CODE < 100
+    MOVE 'E' TO #SEVERITY
+  WHEN P-ERROR-CODE >= 100 AND P-ERROR-CODE < 500
+    MOVE 'E' TO #SEVERITY
+  WHEN P-ERROR-CODE >= 500 AND P-ERROR-CODE < 900
+    MOVE 'F' TO #SEVERITY
+  WHEN P-ERROR-CODE >= 900
+    MOVE 'F' TO #SEVERITY
+  WHEN NONE
+    MOVE 'E' TO #SEVERITY
+END-DECIDE
+*
+* -------------------------------------------------------
+* LOG ERROR VIA COMMON ERROR LOGGER
+* -------------------------------------------------------
+CALLNAT 'LOGERR'
+  P-ERROR-CODE
+  P-ERROR-TEXT
+  #SEVERITY
+  P-MODULE-NAME
+  #USER-ID
+*
+* -------------------------------------------------------
+* DISPLAY ERROR FOR ONLINE USERS
+* -------------------------------------------------------
+IF #ONLINE-FLAG = 'Y'
+  COMPRESS '*** RETAILCORE SYSTEM ERROR ***' INTO #FORMATTED-MSG
+  WRITE #FORMATTED-MSG
+  COMPRESS 'ERROR CODE: ' P-ERROR-CODE INTO #FORMATTED-MSG
+  WRITE #FORMATTED-MSG
+  COMPRESS 'MODULE:     ' P-MODULE-NAME INTO #FORMATTED-MSG
+  WRITE #FORMATTED-MSG
+  COMPRESS 'MESSAGE:    ' P-ERROR-TEXT INTO #FORMATTED-MSG
+  WRITE #FORMATTED-MSG
+  COMPRESS 'TIME:       ' #DATE-DISPLAY ' ' #TIME-DISPLAY INTO #FORMATTED-MSG
+  WRITE #FORMATTED-MSG
+  COMPRESS 'USER:       ' #USER-ID INTO #FORMATTED-MSG
+  WRITE #FORMATTED-MSG
+  WRITE '*** PLEASE CONTACT SYSTEM SUPPORT ***'
+END-IF
+*
+* -------------------------------------------------------
+* FOR BATCH - WRITE TO PRINT OUTPUT
+* -------------------------------------------------------
+IF #ONLINE-FLAG = 'N'
+  WRITE 'RETAILCORE ABORT'
+  WRITE '================'
+  WRITE 'ERROR CODE:' P-ERROR-CODE
+  WRITE 'MODULE    :' P-MODULE-NAME
+  WRITE 'MESSAGE   :' P-ERROR-TEXT
+  WRITE 'TIMESTAMP :' #DATE-DISPLAY #TIME-DISPLAY
+  WRITE 'USER      :' #USER-ID
+  WRITE 'SEVERITY  :' #SEVERITY
+  * TERMINATE WITH ERROR CODE FOR JCL
+  TERMINATE P-ERROR-CODE
+END-IF
+*
+END

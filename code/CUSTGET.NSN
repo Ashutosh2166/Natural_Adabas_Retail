@@ -1,0 +1,154 @@
+* >Natural Source Code: CUSTGET
+* SUBPROGRAM: CUSTGET - CUSTOMER RETRIEVAL
+* DESCRIPTION: RETRIEVES CUSTOMER DATA BY ID OR
+*              VARIOUS SEARCH CRITERIA
+* LIBRARY: RETAILCORE
+* ADABAS FILE: 100 (CUSTOMER)
+* CREATED: 1998-06-01  M. JOHNSON
+* MODIFIED: 2004-07-20 - ADDED SEARCH BY EMAIL
+* MODIFIED: 2012-03-15 - ADDED MEMBERSHIP DATA
+* MODIFIED: 2019-05-22 - ADDED LOYALTY TIER RETRIEVAL
+* -------------------------------------------------------
+DEFINE DATA
+PARAMETER
+  1 P-CUST-ID             (N8)    /* SEARCH BY ID */
+  1 P-CUSTOMER-DATA
+    2 P-CD-ID             (N8)
+    2 P-CD-NO             (A10)
+    2 P-CD-TYPE           (A2)
+    2 P-CD-STATUS         (A1)
+    2 P-CD-TITLE          (A5)
+    2 P-CD-FIRST-NAME     (A30)
+    2 P-CD-LAST-NAME      (A40)
+    2 P-CD-DOB            (D)
+    2 P-CD-GENDER         (A1)
+  1 P-CUSTOMER-CONTACT
+    2 P-CC-EMAIL          (A80)
+    2 P-CC-PHONE-HOME     (A20)
+    2 P-CC-PHONE-MOBILE   (A20)
+    2 P-CC-PHONE-WORK     (A20)
+  1 P-CUSTOMER-ADDRESS
+    2 P-CA-ADDR-LINE1     (A40)
+    2 P-CA-ADDR-LINE2     (A40)
+    2 P-CA-CITY           (A30)
+    2 P-CA-STATE          (A2)
+    2 P-CA-ZIP            (A10)
+    2 P-CA-COUNTRY        (A3)
+  1 P-CUSTOMER-MEMBERSHIP
+    2 P-CM-MEMBER-FLAG    (A1)
+    2 P-CM-MEMBER-ID      (A12)
+    2 P-CM-MEMBER-SINCE   (D)
+    2 P-CM-LOYALTY-TIER   (A1)
+    2 P-CM-LOYALTY-POINTS (N10)
+    2 P-CM-LIFETIME-SPEND (N11.2)
+    2 P-CM-YTD-SPEND      (N9.2)
+  1 P-FOUND-FLAG          (A1)
+  1 P-ERROR-MSG           (A60)
+*
+LOCAL
+  1 #DB-RESPONSE          (N4)
+*
+* ADABAS FILE 100 - CUSTOMER
+  1 CUST-VIEW VIEW OF CUSTOMER-FILE
+    2 CU-ID                (N8)
+    2 CU-NUMBER            (A10)
+    2 CU-TYPE              (A2)
+    2 CU-STATUS            (A1)
+    2 CU-TITLE             (A5)
+    2 CU-FIRST-NAME        (A30)
+    2 CU-LAST-NAME         (A40)
+    2 CU-DOB               (D)
+    2 CU-GENDER            (A1)
+    2 CU-EMAIL             (A80)
+    2 CU-PHONE-HOME        (A20)
+    2 CU-PHONE-MOBILE      (A20)
+    2 CU-PHONE-WORK        (A20)
+    2 CU-ADDR-LINE1        (A40)
+    2 CU-ADDR-LINE2        (A40)
+    2 CU-CITY              (A30)
+    2 CU-STATE             (A2)
+    2 CU-ZIP               (A10)
+    2 CU-COUNTRY           (A3)
+    2 CU-MEMBER-FLAG       (A1)
+    2 CU-MEMBER-ID         (A12)
+    2 CU-MEMBER-SINCE      (D)
+    2 CU-LOYALTY-TIER      (A1)
+    2 CU-LOYALTY-POINTS    (N10)
+    2 CU-LIFETIME-SPEND    (N11.2)
+    2 CU-YTD-SPEND         (N9.2)
+    2 CU-CREDIT-LIMIT      (N9.2)
+    2 CU-CREDIT-HOLD       (A1)
+END-DEFINE
+*
+* -------------------------------------------------------
+* INITIALIZE
+* -------------------------------------------------------
+MOVE 'N' TO P-FOUND-FLAG
+RESET P-ERROR-MSG
+*
+* -------------------------------------------------------
+* VALIDATE INPUT
+* -------------------------------------------------------
+IF P-CUST-ID = 0
+  MOVE 'N' TO P-FOUND-FLAG
+  MOVE 'CUSTOMER ID IS REQUIRED' TO P-ERROR-MSG
+  ESCAPE ROUTINE
+END-IF
+*
+* -------------------------------------------------------
+* RETRIEVE CUSTOMER FROM ADABAS
+* -------------------------------------------------------
+FIND CUST-VIEW WITH CU-ID = P-CUST-ID
+  IF NO RECORDS FOUND
+    MOVE 'N' TO P-FOUND-FLAG
+    MOVE 'CUSTOMER NOT FOUND' TO P-ERROR-MSG
+    ESCAPE ROUTINE
+  END-NOREC
+*
+  * POPULATE CUSTOMER DATA
+  MOVE CU-ID           TO P-CD-ID
+  MOVE CU-NUMBER       TO P-CD-NO
+  MOVE CU-TYPE         TO P-CD-TYPE
+  MOVE CU-STATUS       TO P-CD-STATUS
+  MOVE CU-TITLE        TO P-CD-TITLE
+  MOVE CU-FIRST-NAME   TO P-CD-FIRST-NAME
+  MOVE CU-LAST-NAME    TO P-CD-LAST-NAME
+  MOVE CU-DOB          TO P-CD-DOB
+  MOVE CU-GENDER       TO P-CD-GENDER
+*
+  * POPULATE CONTACT
+  MOVE CU-EMAIL        TO P-CC-EMAIL
+  MOVE CU-PHONE-HOME   TO P-CC-PHONE-HOME
+  MOVE CU-PHONE-MOBILE TO P-CC-PHONE-MOBILE
+  MOVE CU-PHONE-WORK   TO P-CC-PHONE-WORK
+*
+  * POPULATE ADDRESS
+  MOVE CU-ADDR-LINE1   TO P-CA-ADDR-LINE1
+  MOVE CU-ADDR-LINE2   TO P-CA-ADDR-LINE2
+  MOVE CU-CITY         TO P-CA-CITY
+  MOVE CU-STATE        TO P-CA-STATE
+  MOVE CU-ZIP          TO P-CA-ZIP
+  MOVE CU-COUNTRY      TO P-CA-COUNTRY
+*
+  * POPULATE MEMBERSHIP
+  * MODIFIED 2019-05-22 - LOYALTY DATA
+  MOVE CU-MEMBER-FLAG    TO P-CM-MEMBER-FLAG
+  MOVE CU-MEMBER-ID      TO P-CM-MEMBER-ID
+  MOVE CU-MEMBER-SINCE   TO P-CM-MEMBER-SINCE
+  MOVE CU-LOYALTY-TIER   TO P-CM-LOYALTY-TIER
+  MOVE CU-LOYALTY-POINTS TO P-CM-LOYALTY-POINTS
+  MOVE CU-LIFETIME-SPEND TO P-CM-LIFETIME-SPEND
+  MOVE CU-YTD-SPEND      TO P-CM-YTD-SPEND
+*
+  MOVE 'Y' TO P-FOUND-FLAG
+  ESCAPE BOTTOM
+*
+END-FIND
+*
+ON ERROR
+  MOVE 'N' TO P-FOUND-FLAG
+  COMPRESS 'DATABASE ERROR READING CUSTOMER:' *ERROR-NR INTO P-ERROR-MSG
+  CALLNAT 'LOGERR' 1 P-ERROR-MSG 'E' 'CUSTGET' *USER
+END-ERROR
+*
+END

@@ -1,0 +1,146 @@
+* >Natural Source Code: INV-COPY
+* RETAILCORE - INVENTORY DATA DEFINITIONS
+* SHARED BY ALL INVENTORY-RELATED PROGRAMS
+* CREATED: 1998-04-05
+* MODIFIED: 2005-09-10 - ADDED SAFETY STOCK FIELDS
+* MODIFIED: 2012-03-20 - ADDED TRANSFER FIELDS
+* MODIFIED: 2018-07-15 - ADDED DAMAGED INVENTORY
+* MODIFIED: 2021-11-30 - ADDED BACKORDER FIELDS
+* -------------------------------------------------------
+*
+* INVENTORY MASTER RECORD
+*
+1 INVENTORY-DATA
+  2 INV-PROD-ID           (N8)    /* PRODUCT ID */
+  2 INV-SKU               (A15)   /* SKU */
+  2 INV-LOC-TYPE          (A1)    /* S=STORE W=WAREHOUSE */
+  2 INV-LOC-ID            (N4)    /* STORE-ID OR WH-ID */
+  2 INV-ON-HAND           (N8)    /* TOTAL ON HAND */
+  2 INV-RESERVED          (N8)    /* RESERVED FOR ORDERS */
+  2 INV-ALLOCATED         (N8)    /* ALLOCATED FOR FULFILLMENT */
+  2 INV-DAMAGED           (N8)    /* DAMAGED UNITS */
+  2 INV-IN-TRANSIT        (N8)    /* IN TRANSIT */
+  2 INV-AVAILABLE         (N8)    /* CALCULATED: ON-HAND - RESERVED - ALLOCATED - DAMAGED */
+  2 INV-LAST-COUNT-DATE   (D)     /* LAST PHYSICAL COUNT */
+  2 INV-LAST-RECEIPT-DATE (D)     /* LAST RECEIPT DATE */
+  2 INV-LAST-SOLD-DATE    (D)     /* LAST SALE DATE */
+*
+* INVENTORY THRESHOLDS
+*
+1 INVENTORY-THRESHOLDS
+  2 INV-SAFETY-STOCK      (N8)    /* MINIMUM SAFETY STOCK LEVEL */
+  2 INV-REORDER-LEVEL     (N8)    /* REORDER POINT */
+  2 INV-REORDER-QTY       (N8)    /* STANDARD REORDER QUANTITY */
+  2 INV-MAX-STOCK         (N8)    /* MAXIMUM STOCK LEVEL */
+  2 INV-MIN-DISPLAY       (N4)    /* MINIMUM DISPLAY QUANTITY */
+*
+* INVENTORY AVAILABILITY CALCULATION
+*
+1 INVENTORY-AVAIL-CALC
+  2 IAC-ON-HAND           (N8)
+  2 IAC-RESERVED          (N8)
+  2 IAC-ALLOCATED         (N8)
+  2 IAC-DAMAGED           (N8)
+  2 IAC-IN-TRANSIT        (N8)
+  2 IAC-AVAILABLE         (N8)    /* COMPUTED RESULT */
+  2 IAC-BELOW-SAFETY      (A1)    /* Y N */
+  2 IAC-BELOW-REORDER     (A1)    /* Y N */
+  2 IAC-NEEDS-REPLENISH   (A1)    /* Y N */
+*
+* RESERVATION RECORD
+*
+1 RESERVATION-DATA
+  2 RES-ID                (N10)   /* RESERVATION IDENTIFIER */
+  2 RES-PROD-ID           (N8)    /* PRODUCT */
+  2 RES-SKU               (A15)   /* SKU */
+  2 RES-LOC-TYPE          (A1)    /* S W */
+  2 RES-LOC-ID            (N4)    /* LOCATION */
+  2 RES-ORDER-ID          (N10)   /* ORDER */
+  2 RES-QTY               (N8)    /* RESERVED QUANTITY */
+  2 RES-STATUS            (A1)    /* R=RESERVED L=RELEASED A=ALLOCATED E=EXPIRED */
+  2 RES-DATE              (D)     /* RESERVATION DATE */
+  2 RES-EXPIRY-DATE       (D)     /* EXPIRATION DATE */
+  2 RES-CREATED-BY        (A8)
+*
+* STOCK TRANSFER RECORD
+*
+1 TRANSFER-DATA
+  2 TRN-ID                (N10)   /* TRANSFER IDENTIFIER */
+  2 TRN-TYPE              (A2)    /* SS=STORE-STORE SW=STORE-WH WS=WH-STORE WW=WH-WH */
+  2 TRN-FROM-LOC-TYPE     (A1)    /* S W */
+  2 TRN-FROM-LOC-ID       (N4)
+  2 TRN-TO-LOC-TYPE       (A1)    /* S W */
+  2 TRN-TO-LOC-ID         (N4)
+  2 TRN-PROD-ID           (N8)
+  2 TRN-SKU               (A15)
+  2 TRN-QTY               (N8)    /* TRANSFER QUANTITY */
+  2 TRN-STATUS            (A2)    /* PE=PENDING AP=APPROVED SH=SHIPPED RC=RECEIVED CA=CANCELLED */
+  2 TRN-REQUEST-DATE      (D)
+  2 TRN-SHIP-DATE         (D)
+  2 TRN-RECV-DATE         (D)
+  2 TRN-REASON            (A4)    /* REPL RETN RBAL DMGD */
+  2 TRN-CREATED-BY        (A8)
+*
+* INVENTORY ADJUSTMENT
+*
+1 ADJUSTMENT-DATA
+  2 ADJ-ID                (N10)   /* ADJUSTMENT IDENTIFIER */
+  2 ADJ-PROD-ID           (N8)
+  2 ADJ-SKU               (A15)
+  2 ADJ-LOC-TYPE          (A1)
+  2 ADJ-LOC-ID            (N4)
+  2 ADJ-QTY               (N8)    /* SIGNED - POSITIVE=ADD NEGATIVE=REMOVE */
+  2 ADJ-REASON            (A4)    /* DMGD SHRK FNDC RCNT CORR RETN */
+  2 ADJ-REASON-TEXT       (A60)
+  2 ADJ-OLD-ON-HAND       (N8)
+  2 ADJ-NEW-ON-HAND       (N8)
+  2 ADJ-STATUS            (A1)    /* P=PENDING A=APPROVED R=REJECTED */
+  2 ADJ-DATE              (D)
+  2 ADJ-APPROVED-BY       (A8)
+  2 ADJ-CREATED-BY        (A8)
+*
+* BACKORDER RECORD
+*
+1 BACKORDER-DATA
+  2 BO-ID                 (N10)   /* BACKORDER IDENTIFIER */
+  2 BO-ORDER-ID           (N10)
+  2 BO-LINE-NO            (N3)
+  2 BO-PROD-ID            (N8)
+  2 BO-SKU                (A15)
+  2 BO-QTY                (N8)
+  2 BO-STATUS             (A1)    /* P=PENDING F=FILLED C=CANCELLED */
+  2 BO-EXPECTED-DATE      (D)
+  2 BO-CREATED-DATE       (D)
+  2 BO-FILLED-DATE        (D)
+*
+* REPLENISHMENT REQUEST
+*
+1 REPLENISH-DATA
+  2 RPL-ID                (N10)   /* REPLENISHMENT ID */
+  2 RPL-PROD-ID           (N8)
+  2 RPL-SKU               (A15)
+  2 RPL-LOC-TYPE          (A1)
+  2 RPL-LOC-ID            (N4)
+  2 RPL-QTY               (N8)    /* QUANTITY TO REPLENISH */
+  2 RPL-STATUS            (A2)    /* PE=PENDING AP=APPROVED OR=ORDERED RC=RECEIVED */
+  2 RPL-PO-ID             (N10)   /* LINKED PURCHASE ORDER */
+  2 RPL-PRIORITY          (N1)    /* 1=URGENT 2=HIGH 3=NORMAL 4=LOW */
+  2 RPL-REQUEST-DATE      (D)
+  2 RPL-EXPECTED-DATE     (D)
+  2 RPL-CREATED-BY        (A8)
+*
+* INVENTORY RECONCILIATION
+*
+1 RECON-DATA
+  2 RECON-ID              (N10)   /* RECONCILIATION ID */
+  2 RECON-LOC-TYPE        (A1)
+  2 RECON-LOC-ID          (N4)
+  2 RECON-DATE            (D)
+  2 RECON-STATUS          (A1)    /* P=PENDING C=COMPLETE */
+  2 RECON-ITEMS-COUNTED   (N6)
+  2 RECON-ITEMS-MATCHED   (N6)
+  2 RECON-ITEMS-VARIANCE  (N6)
+  2 RECON-TOTAL-VARIANCE  (N10.2) /* DOLLAR VALUE OF VARIANCE */
+  2 RECON-CONDUCTED-BY    (A8)
+*
+END-DEFINE

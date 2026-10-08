@@ -1,0 +1,109 @@
+* >Natural Source Code: STOREGET
+* SUBPROGRAM: STOREGET - STORE RETRIEVAL
+* DESCRIPTION: RETRIEVES STORE MASTER DATA BY ID
+* LIBRARY: RETAILCORE
+* ADABAS FILE: 103 (STORE)
+* CREATED: 1998-08-01  D. CHEN
+* MODIFIED: 2006-04-15 - ADDED FULFILLMENT FIELDS
+* MODIFIED: 2017-08-22 - ADDED STORE HOURS
+* -------------------------------------------------------
+DEFINE DATA
+PARAMETER
+  1 P-STORE-ID            (N4)
+  1 P-STORE-DATA
+    2 P-SD-ID             (N4)
+    2 P-SD-CODE           (A6)
+    2 P-SD-NAME           (A40)
+    2 P-SD-TYPE           (A2)
+    2 P-SD-STATUS         (A1)
+    2 P-SD-REGION         (A4)
+    2 P-SD-DISTRICT       (A4)
+    2 P-SD-MANAGER        (A30)
+    2 P-SD-PHONE          (A20)
+    2 P-SD-EMAIL          (A60)
+  1 P-STORE-ADDRESS
+    2 P-SA-LINE1          (A40)
+    2 P-SA-LINE2          (A40)
+    2 P-SA-CITY           (A30)
+    2 P-SA-STATE          (A2)
+    2 P-SA-ZIP            (A10)
+    2 P-SA-COUNTRY        (A3)
+  1 P-STORE-OPS
+    2 P-SO-TAX-RATE       (N5.4)
+    2 P-SO-CURRENCY       (A3)
+    2 P-SO-FULFILL-CAP    (A1)
+    2 P-SO-SHIP-FROM      (A1)
+    2 P-SO-PICKUP-AVAIL   (A1)
+  1 P-FOUND-FLAG          (A1)
+  1 P-ERROR-MSG           (A60)
+*
+LOCAL
+  1 STORE-VIEW VIEW OF STORE-FILE
+    2 ST-ID                (N4)
+    2 ST-CODE              (A6)
+    2 ST-NAME              (A40)
+    2 ST-TYPE              (A2)
+    2 ST-STATUS            (A1)
+    2 ST-REGION            (A4)
+    2 ST-DISTRICT          (A4)
+    2 ST-MANAGER           (A30)
+    2 ST-PHONE             (A20)
+    2 ST-EMAIL             (A60)
+    2 ST-ADDR-LINE1        (A40)
+    2 ST-ADDR-LINE2        (A40)
+    2 ST-CITY              (A30)
+    2 ST-STATE             (A2)
+    2 ST-ZIP               (A10)
+    2 ST-COUNTRY           (A3)
+    2 ST-TAX-RATE          (N5.4)
+    2 ST-CURRENCY          (A3)
+    2 ST-FULFILLMENT-CAP   (A1)
+    2 ST-SHIP-FROM-STORE   (A1)
+    2 ST-PICKUP-AVAIL      (A1)
+END-DEFINE
+*
+MOVE 'N' TO P-FOUND-FLAG
+RESET P-ERROR-MSG
+*
+IF P-STORE-ID = 0
+  MOVE 'STORE ID REQUIRED' TO P-ERROR-MSG
+  ESCAPE ROUTINE
+END-IF
+*
+FIND STORE-VIEW WITH ST-ID = P-STORE-ID
+  IF NO RECORDS FOUND
+    MOVE 'STORE NOT FOUND' TO P-ERROR-MSG
+    ESCAPE ROUTINE
+  END-NOREC
+*
+  MOVE ST-ID               TO P-SD-ID
+  MOVE ST-CODE             TO P-SD-CODE
+  MOVE ST-NAME             TO P-SD-NAME
+  MOVE ST-TYPE             TO P-SD-TYPE
+  MOVE ST-STATUS           TO P-SD-STATUS
+  MOVE ST-REGION           TO P-SD-REGION
+  MOVE ST-DISTRICT         TO P-SD-DISTRICT
+  MOVE ST-MANAGER          TO P-SD-MANAGER
+  MOVE ST-PHONE            TO P-SD-PHONE
+  MOVE ST-EMAIL            TO P-SD-EMAIL
+  MOVE ST-ADDR-LINE1       TO P-SA-LINE1
+  MOVE ST-ADDR-LINE2       TO P-SA-LINE2
+  MOVE ST-CITY             TO P-SA-CITY
+  MOVE ST-STATE            TO P-SA-STATE
+  MOVE ST-ZIP              TO P-SA-ZIP
+  MOVE ST-COUNTRY          TO P-SA-COUNTRY
+  MOVE ST-TAX-RATE         TO P-SO-TAX-RATE
+  MOVE ST-CURRENCY         TO P-SO-CURRENCY
+  MOVE ST-FULFILLMENT-CAP  TO P-SO-FULFILL-CAP
+  MOVE ST-SHIP-FROM-STORE  TO P-SO-SHIP-FROM
+  MOVE ST-PICKUP-AVAIL     TO P-SO-PICKUP-AVAIL
+  MOVE 'Y' TO P-FOUND-FLAG
+  ESCAPE BOTTOM
+END-FIND
+*
+ON ERROR
+  COMPRESS 'DATABASE ERROR:' *ERROR-NR INTO P-ERROR-MSG
+  CALLNAT 'LOGERR' 200 P-ERROR-MSG 'E' 'STOREGET' *USER
+END-ERROR
+*
+END

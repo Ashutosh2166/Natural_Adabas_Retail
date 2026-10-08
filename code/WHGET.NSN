@@ -1,0 +1,96 @@
+* >Natural Source Code: WHGET
+* SUBPROGRAM: WHGET - WAREHOUSE RETRIEVAL
+* DESCRIPTION: RETRIEVES WAREHOUSE MASTER DATA
+* LIBRARY: RETAILCORE
+* ADABAS FILE: 104 (WAREHOUSE)
+* CREATED: 1999-01-15  D. CHEN
+* MODIFIED: 2008-09-22 - ADDED CAPACITY FIELDS
+* MODIFIED: 2016-11-10 - ADDED PRIORITY FIELD
+* -------------------------------------------------------
+DEFINE DATA
+PARAMETER
+  1 P-WH-ID               (N4)
+  1 P-WH-DATA
+    2 P-WD-ID             (N4)
+    2 P-WD-CODE           (A6)
+    2 P-WD-NAME           (A40)
+    2 P-WD-TYPE           (A2)
+    2 P-WD-STATUS         (A1)
+    2 P-WD-REGION         (A4)
+    2 P-WD-MANAGER        (A30)
+    2 P-WD-PHONE          (A20)
+  1 P-WH-ADDRESS
+    2 P-WA-LINE1          (A40)
+    2 P-WA-CITY           (A30)
+    2 P-WA-STATE          (A2)
+    2 P-WA-ZIP            (A10)
+    2 P-WA-COUNTRY        (A3)
+  1 P-WH-CAPACITY
+    2 P-WC-TOTAL          (N10)
+    2 P-WC-USED           (N10)
+    2 P-WC-AVAIL          (N10)
+    2 P-WC-PRIORITY       (N2)
+  1 P-FOUND-FLAG          (A1)
+  1 P-ERROR-MSG           (A60)
+*
+LOCAL
+  1 WH-VIEW VIEW OF WAREHOUSE-FILE
+    2 WH-ID                (N4)
+    2 WH-CODE              (A6)
+    2 WH-NAME              (A40)
+    2 WH-TYPE              (A2)
+    2 WH-STATUS            (A1)
+    2 WH-REGION            (A4)
+    2 WH-MANAGER           (A30)
+    2 WH-PHONE             (A20)
+    2 WH-ADDR-LINE1        (A40)
+    2 WH-CITY              (A30)
+    2 WH-STATE             (A2)
+    2 WH-ZIP               (A10)
+    2 WH-COUNTRY           (A3)
+    2 WH-TOTAL-CAPACITY    (N10)
+    2 WH-USED-CAPACITY     (N10)
+    2 WH-AVAIL-CAPACITY    (N10)
+    2 WH-PRIORITY          (N2)
+END-DEFINE
+*
+MOVE 'N' TO P-FOUND-FLAG
+RESET P-ERROR-MSG
+*
+IF P-WH-ID = 0
+  MOVE 'WAREHOUSE ID REQUIRED' TO P-ERROR-MSG
+  ESCAPE ROUTINE
+END-IF
+*
+FIND WH-VIEW WITH WH-ID = P-WH-ID
+  IF NO RECORDS FOUND
+    MOVE 'WAREHOUSE NOT FOUND' TO P-ERROR-MSG
+    ESCAPE ROUTINE
+  END-NOREC
+  MOVE WH-ID             TO P-WD-ID
+  MOVE WH-CODE           TO P-WD-CODE
+  MOVE WH-NAME           TO P-WD-NAME
+  MOVE WH-TYPE           TO P-WD-TYPE
+  MOVE WH-STATUS         TO P-WD-STATUS
+  MOVE WH-REGION         TO P-WD-REGION
+  MOVE WH-MANAGER        TO P-WD-MANAGER
+  MOVE WH-PHONE          TO P-WD-PHONE
+  MOVE WH-ADDR-LINE1     TO P-WA-LINE1
+  MOVE WH-CITY           TO P-WA-CITY
+  MOVE WH-STATE          TO P-WA-STATE
+  MOVE WH-ZIP            TO P-WA-ZIP
+  MOVE WH-COUNTRY        TO P-WA-COUNTRY
+  MOVE WH-TOTAL-CAPACITY TO P-WC-TOTAL
+  MOVE WH-USED-CAPACITY  TO P-WC-USED
+  MOVE WH-AVAIL-CAPACITY TO P-WC-AVAIL
+  MOVE WH-PRIORITY       TO P-WC-PRIORITY
+  MOVE 'Y' TO P-FOUND-FLAG
+  ESCAPE BOTTOM
+END-FIND
+*
+ON ERROR
+  COMPRESS 'DATABASE ERROR:' *ERROR-NR INTO P-ERROR-MSG
+  CALLNAT 'LOGERR' 210 P-ERROR-MSG 'E' 'WHGET' *USER
+END-ERROR
+*
+END

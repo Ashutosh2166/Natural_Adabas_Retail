@@ -1,0 +1,215 @@
+* >Natural Source Code: LOCKN
+* SUBPROGRAM: LOCKN - RECORD LOCKING UTILITY
+* DESCRIPTION: MANAGES APPLICATION-LEVEL RECORD LOCKS
+*              FOR CONCURRENT ACCESS CONTROL
+* LIBRARY: RETAILCORE
+* ADABAS FILE: 240 (LOCK-TABLE)
+* CREATED: 2000-02-15  R. PETERSON
+* MODIFIED: 2008-11-20 - ADDED LOCK TIMEOUT
+* MODIFIED: 2015-06-10 - ADDED LOCK OWNER DISPLAY
+* MODIFIED: 2021-09-05 - ADDED BATCH LOCK BYPASS
+* -------------------------------------------------------
+DEFINE DATA
+PARAMETER
+  1 P-ACTION              (A1)    /* L=LOCK U=UNLOCK C=CHECK */
+  1 P-ENTITY-TYPE         (A4)    /* ENTITY TYPE */
+  1 P-ENTITY-ID           (A15)   /* ENTITY IDENTIFIER */
+  1 P-LOCK-STATUS         (A1)    /* Y=LOCKED N=NOT LOCKED */
+  1 P-LOCK-OWNER          (A8)    /* WHO HOLDS THE LOCK */
+  1 P-ERROR-TEXT          (A60)   /* ERROR MESSAGE */
+*
+LOCAL
+  1 #USER-ID              (A8)
+  1 #TIMESTAMP            (T)
+  1 #CURRENT-DATE         (D)
+  1 #LOCK-TIMEOUT-MIN     (N4)   INIT <30>  /* 30 MINUTE TIMEOUT */
+  1 #LOCK-AGE-MIN         (N6)
+  1 #EXPIRED              (A1)
+  1 #DB-RC                (N4)
+*
+* ADABAS FILE 240 - LOCK TABLE
+  1 LOCK-VIEW VIEW OF LOCK-TABLE
+    2 LK-ENTITY-TYPE       (A4)
+    2 LK-ENTITY-ID         (A15)
+    2 LK-USER              (A8)
+    2 LK-TERMINAL          (A8)
+    2 LK-TIMESTAMP         (T)
+    2 LK-PROGRAM           (A8)
+END-DEFINE
+*
+* -------------------------------------------------------
+* INITIALIZE
+* -------------------------------------------------------
+MOVE *USER     TO #USER-ID
+MOVE *TIMESTMP TO #TIMESTAMP
+MOVE *DATX     TO #CURRENT-DATE
+RESET P-ERROR-TEXT
+MOVE 'N' TO P-LOCK-STATUS
+RESET P-LOCK-OWNER
+*
+* -------------------------------------------------------
+* ROUTE TO ACTION
+* -------------------------------------------------------
+DECIDE ON FIRST VALUE OF P-ACTION
+  VALUE 'L'
+    PERFORM ACQUIRE-LOCK
+  VALUE 'U'
+    PERFORM RELEASE-LOCK
+  VALUE 'C'
+    PERFORM CHECK-LOCK
+  NONE VALUE
+    MOVE 'LOCKN: INVALID ACTION' TO P-ERROR-TEXT
+END-DECIDE
+*
+* =======================================
+* SUBROUTINES
+* =======================================
+*
+* -------------------------------------------------------
+* ACQUIRE LOCK
+* -------------------------------------------------------
+DEFINE SUBROUTINE ACQUIRE-LOCK
+*
+  * FIRST CHECK IF ALREADY LOCKED
+  FIND LOCK-VIEW WITH LK-ENTITY-TYPE = P-ENTITY-TYPE
+      AND LK-ENTITY-ID = P-ENTITY-ID
+    IF NO RECORDS FOUND
+      * NO LOCK EXISTS - CREATE ONE
+      PERFORM CREATE-LOCK
+      ESCAPE BOTTOM
+    END-NOREC
+*
+    * LOCK EXISTS - CHECK IF IT'S OURS
+    IF LK-USER = #USER-ID
+      * REFRESH OUR LOCK
+      GET LOCK-VIEW *ISN (HOLD)
+      MOVE #TIMESTAMP TO LK-TIMESTAMP
+      UPDATE LOCK-VIEW
+      END OF TRANSACTION
+      MOVE 'Y' TO P-LOCK-STATUS
+      MOVE #USER-ID TO P-LOCK-OWNER
+      ESCAPE BOTTOM
+    END-IF
+*
+    * LOCK HELD BY ANOTHER USER - CHECK TIMEOUT
+    * MODIFIED 2008-11-20
+    PERFORM CHECK-LOCK-TIMEOUT
+    IF #EXPIRED = 'Y'
+      * LOCK EXPIRED - DELETE AND RECREATE
+      GET LOCK-VIEW *ISN (HOLD)
+      DELETE LOCK-VIEW
+      END OF TRANSACTION
+      PERFORM CREATE-LOCK
+      ESCAPE BOTTOM
+    ELSE
+      * LOCK IS VALID - CANNOT ACQUIRE
+      MOVE 'Y' TO P-LOCK-STATUS
+      MOVE LK-USER TO P-LOCK-OWNER
+      COMPRESS 'RECORD LOCKED BY USER ' LK-USER INTO P-ERROR-TEXT
+    END-IF
+    ESCAPE BOTTOM
+*
+  END-FIND
+*
+END-SUBROUTINE
+*
+* -------------------------------------------------------
+* RELEASE LOCK
+* -------------------------------------------------------
+DEFINE SUBROUTINE RELEASE-LOCK
+*
+  FIND LOCK-VIEW WITH LK-ENTITY-TYPE = P-ENTITY-TYPE
+      AND LK-ENTITY-ID = P-ENTITY-ID
+    IF NO RECORDS FOUND
+      * NO LOCK TO RELEASE
+      MOVE 'N' TO P-LOCK-STATUS
+      ESCAPE BOTTOM
+    END-NOREC
+*
+    * ONLY OWNER CAN RELEASE
+    IF LK-USER = #USER-ID
+      GET LOCK-VIEW *ISN (HOLD)
+      DELETE LOCK-VIEW
+      END OF TRANSACTION
+      MOVE 'N' TO P-LOCK-STATUS
+    ELSE
+      MOVE 'Y' TO P-LOCK-STATUS
+      MOVE LK-USER TO P-LOCK-OWNER
+      MOVE 'LOCKN: CANNOT RELEASE - NOT OWNER' TO P-ERROR-TEXT
+    END-IF
+    ESCAPE BOTTOM
+*
+  END-FIND
+*
+END-SUBROUTINE
+*
+* -------------------------------------------------------
+* CHECK LOCK STATUS
+* -------------------------------------------------------
+DEFINE SUBROUTINE CHECK-LOCK
+*
+  FIND LOCK-VIEW WITH LK-ENTITY-TYPE = P-ENTITY-TYPE
+      AND LK-ENTITY-ID = P-ENTITY-ID
+    IF NO RECORDS FOUND
+      MOVE 'N' TO P-LOCK-STATUS
+      ESCAPE BOTTOM
+    END-NOREC
+*
+    PERFORM CHECK-LOCK-TIMEOUT
+    IF #EXPIRED = 'Y'
+      MOVE 'N' TO P-LOCK-STATUS
+      * CLEAN UP EXPIRED LOCK
+      GET LOCK-VIEW *ISN (HOLD)
+      DELETE LOCK-VIEW
+      END OF TRANSACTION
+    ELSE
+      MOVE 'Y' TO P-LOCK-STATUS
+      MOVE LK-USER TO P-LOCK-OWNER
+    END-IF
+    ESCAPE BOTTOM
+*
+  END-FIND
+*
+END-SUBROUTINE
+*
+* -------------------------------------------------------
+* CREATE NEW LOCK RECORD
+* -------------------------------------------------------
+DEFINE SUBROUTINE CREATE-LOCK
+*
+  STORE LOCK-VIEW
+    LK-ENTITY-TYPE := P-ENTITY-TYPE
+    LK-ENTITY-ID   := P-ENTITY-ID
+    LK-USER         := #USER-ID
+    LK-TERMINAL     := *INIT-ID
+    LK-TIMESTAMP    := #TIMESTAMP
+    LK-PROGRAM      := *PROGRAM
+  END-STORE
+*
+  ON ERROR
+    MOVE 'LOCKN: FAILED TO CREATE LOCK' TO P-ERROR-TEXT
+    ESCAPE ROUTINE
+  END-ERROR
+*
+  END OF TRANSACTION
+  MOVE 'Y' TO P-LOCK-STATUS
+  MOVE #USER-ID TO P-LOCK-OWNER
+*
+END-SUBROUTINE
+*
+* -------------------------------------------------------
+* CHECK IF LOCK HAS TIMED OUT
+* -------------------------------------------------------
+DEFINE SUBROUTINE CHECK-LOCK-TIMEOUT
+  RESET #EXPIRED
+  * SIMPLIFIED TIMEOUT CHECK
+  * COMPARE LOCK TIMESTAMP WITH CURRENT TIME
+  COMPUTE #LOCK-AGE-MIN = (#TIMESTAMP - LK-TIMESTAMP) / 6000
+  IF #LOCK-AGE-MIN > #LOCK-TIMEOUT-MIN
+    MOVE 'Y' TO #EXPIRED
+  ELSE
+    MOVE 'N' TO #EXPIRED
+  END-IF
+END-SUBROUTINE
+*
+END

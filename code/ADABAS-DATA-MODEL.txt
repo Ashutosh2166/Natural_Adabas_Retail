@@ -1,0 +1,1099 @@
+===============================================================================
+ RETAILCORE - ADABAS DATABASE MODEL REFERENCE
+===============================================================================
+ DOCUMENT: ADABAS-DATA-MODEL
+ VERSION:  3.2
+ CREATED:  2000-01-15  A. GARCIA
+ MODIFIED: 2024-03-15  TEAM - COMPREHENSIVE UPDATE
+ PURPOSE:  COMPLETE LOGICAL FILE DEFINITIONS FOR THE
+           RETAILCORE RETAIL MANAGEMENT SYSTEM
+===============================================================================
+
+TABLE OF CONTENTS
+-----------------
+1. FILE NUMBERING SCHEME
+2. CUSTOMER DOMAIN (FILE 100)
+3. PRODUCT DOMAIN (FILES 101-102)
+4. STORE/WAREHOUSE DOMAIN (FILES 103-104)
+5. INVENTORY DOMAIN (FILES 105-110)
+6. ORDER DOMAIN (FILES 111-113)
+7. PRICING DOMAIN (FILES 120-124)
+8. PROCUREMENT DOMAIN (FILES 130-132)
+9. PAYMENT/FULFILLMENT DOMAIN (FILES 140-143)
+10. RETURNS DOMAIN (FILES 150-151)
+11. SYSTEM/INFRASTRUCTURE (FILES 200-250)
+12. CROSS-DOMAIN RELATIONSHIPS
+13. STATUS CODE REFERENCE
+14. ACCESS PATTERNS
+
+===============================================================================
+1. FILE NUMBERING SCHEME
+===============================================================================
+
+ FILE#  NAME               DOMAIN             EST RECORDS
+ -----  -----------------  -----------------  -----------
+ 100    CUSTOMER-FILE      CUSTOMER           500,000
+ 101    PRODUCT-FILE       PRODUCT            50,000
+ 102    CATEGORY-FILE      PRODUCT            500
+ 103    STORE-FILE         STORE              200
+ 104    WAREHOUSE-FILE     WAREHOUSE          20
+ 105    INVENTORY-FILE     INVENTORY          2,000,000
+ 106    RESERVATION-FILE   INVENTORY          100,000
+ 107    ADJUSTMENT-FILE    INVENTORY          500,000
+ 108    TRANSFER-FILE      INVENTORY          50,000
+ 109    RECONCILIATION-FILE INVENTORY         10,000
+ 110    REPLENISHMENT-FILE INVENTORY          100,000
+ 111    ORDER-FILE         ORDER              5,000,000
+ 112    ORDER-LINE-FILE    ORDER              15,000,000
+ 113    ORDER-HISTORY-FILE ORDER              20,000,000
+ 120    STORE-PRICE-FILE   PRICING            500,000
+ 121    PROMOTION-FILE     PRICING            5,000
+ 122    PROMO-ITEM-FILE    PRICING            50,000
+ 123    COUPON-FILE        PRICING            20,000
+ 124    TAX-RATE-FILE      PRICING            1,000
+ 130    SUPPLIER-FILE      PROCUREMENT        5,000
+ 131    PO-HEADER-FILE     PROCUREMENT        200,000
+ 132    PO-LINE-FILE       PROCUREMENT        1,000,000
+ 140    PAYMENT-FILE       PAYMENT            5,000,000
+ 141    SHIPMENT-FILE      FULFILLMENT        3,000,000
+ 142    SHIPMENT-LINE-FILE FULFILLMENT        10,000,000
+ 143    SETTLEMENT-FILE    PAYMENT            5,000,000
+ 150    RETURN-FILE        RETURNS            500,000
+ 151    RETURN-LINE-FILE   RETURNS            1,000,000
+ 200    ERROR-LOG          SYSTEM             1,000,000
+ 210    AUDIT-LOG          SYSTEM             10,000,000
+ 220    SEQUENCE-CONTROL   SYSTEM             50
+ 230    MESSAGE-FILE       SYSTEM             500
+ 240    LOCK-TABLE         SYSTEM             10,000
+ 250    CONFIG-FILE        SYSTEM             200
+
+===============================================================================
+2. CUSTOMER DOMAIN
+===============================================================================
+
+FILE 100: CUSTOMER-FILE
+-----------------------
+PURPOSE: Master customer records for all retail channels.
+         Stores personal info, loyalty data, credit limits.
+
+FIELDS:
+ FIELD          TYPE    LEN  DESC/SUPER/SUB   DESCRIPTOR
+ -------------- ------  ---  ---------------  ----------
+ CUST-ID        N       8    PRIMARY KEY       DE (UNIQUE)
+ FIRST-NAME     A       30
+ LAST-NAME      A       30                     DE
+ EMAIL          A       60                     DE (UNIQUE)
+ PHONE          A       15
+ ADDRESS-LINE1  A       60
+ ADDRESS-LINE2  A       60
+ CITY           A       30
+ STATE          A       2                      DE
+ ZIP            A       10
+ COUNTRY        A       2
+ CUST-TYPE      A       2    WH/CO/EM/RE       DE
+ LOYALTY-TIER   A       1    B/S/G/P           DE
+ LOYALTY-POINTS N       10
+ TOTAL-SPEND    N(11.2)
+ ORDER-COUNT    N       8
+ CREDIT-LIMIT   N(9.2)
+ STATUS         A       1    A/I/S/B           DE
+ CREATED-DATE   D
+ UPDATED-DATE   D
+ LAST-ORDER-DATE D
+
+NOTES:
+- CUST-TYPE: WH=Wholesale, CO=Corporate, EM=Employee, RE=Retail
+- LOYALTY-TIER: B=Bronze(<1000), S=Silver(1000-4999),
+  G=Gold(5000-14999), P=Platinum(15000+)
+- STATUS: A=Active, I=Inactive, S=Suspended, B=Blocked
+
+PRIMARY ACCESS: BY CUST-ID (SEQUENTIAL AND RANDOM)
+SECONDARY ACCESS: BY LAST-NAME, BY EMAIL, BY STATE, BY STATUS
+
+===============================================================================
+3. PRODUCT DOMAIN
+===============================================================================
+
+FILE 101: PRODUCT-FILE
+----------------------
+PURPOSE: Master product catalog with pricing and classification.
+
+FIELDS:
+ FIELD          TYPE    LEN  DESC/SUPER/SUB   DESCRIPTOR
+ -------------- ------  ---  ---------------  ----------
+ PROD-ID        N       8    PRIMARY KEY       DE (UNIQUE)
+ SKU            A       15                     DE (UNIQUE)
+ NAME           A       60
+ DESCRIPTION    A       200
+ CAT-ID         N       6                      DE
+ BRAND          A       30                     DE
+ UPC            A       13                     DE
+ COST-PRICE     N(9.2)
+ LIST-PRICE     N(9.2)
+ MIN-PRICE      N(9.2)
+ WEIGHT         N(7.2)
+ WEIGHT-UNIT    A       2    LB/KG/OZ
+ TAX-CODE       A       4
+ WEB-ENABLED    A       1    Y/N
+ SUPP-ID        N       8                      DE
+ LEAD-TIME-DAYS N       3
+ STATUS         A       1    A/I/D              DE
+ CREATED-DATE   D
+ UPDATED-DATE   D
+
+NOTES:
+- STATUS: A=Active, I=Inactive, D=Discontinued
+- SKU is globally unique product identifier
+- UPC is external barcode identifier
+- MIN-PRICE enforces margin protection floor
+
+FILE 102: CATEGORY-FILE
+-----------------------
+PURPOSE: Product category hierarchy for merchandising.
+
+FIELDS:
+ FIELD          TYPE    LEN  DESC/SUPER/SUB   DESCRIPTOR
+ -------------- ------  ---  ---------------  ----------
+ CAT-ID         N       6    PRIMARY KEY       DE (UNIQUE)
+ NAME           A       30
+ PARENT-CAT-ID  N       6                      DE
+ LEVEL          N       2
+ STATUS         A       1    A/I               DE
+
+NOTES:
+- PARENT-CAT-ID = 0 for root categories
+- LEVEL: 1=Department, 2=Class, 3=Subclass
+- Hierarchy: Department > Class > Subclass
+
+===============================================================================
+4. STORE/WAREHOUSE DOMAIN
+===============================================================================
+
+FILE 103: STORE-FILE
+--------------------
+PURPOSE: Physical retail store locations.
+
+FIELDS:
+ FIELD          TYPE    LEN  DESC/SUPER/SUB   DESCRIPTOR
+ -------------- ------  ---  ---------------  ----------
+ STORE-ID       N       4    PRIMARY KEY       DE (UNIQUE)
+ NAME           A       30
+ ADDRESS        A       60
+ CITY           A       30
+ STATE          A       2                      DE
+ ZIP            A       10
+ PHONE          A       15
+ MANAGER-NAME   A       40
+ REGION         A       2                      DE
+ DISTRICT       A       4                      DE
+ STORE-TYPE     A       1    F/O/K              DE
+ STATUS         A       1    A/I/T/C            DE
+ OPEN-DATE      D
+ CLOSE-DATE     D
+
+NOTES:
+- STORE-TYPE: F=Full, O=Outlet, K=Kiosk
+- STATUS: A=Active, I=Inactive, T=Temporary, C=Closed
+
+FILE 104: WAREHOUSE-FILE
+------------------------
+PURPOSE: Distribution center / warehouse locations.
+
+FIELDS:
+ FIELD          TYPE    LEN  DESC/SUPER/SUB   DESCRIPTOR
+ -------------- ------  ---  ---------------  ----------
+ WH-ID          N       4    PRIMARY KEY       DE (UNIQUE)
+ NAME           A       30
+ ADDRESS        A       60
+ CITY           A       30
+ STATE          A       2                      DE
+ ZIP            A       10
+ WH-TYPE        A       1    D/R/C              DE
+ CAPACITY       N       10
+ CURRENT-UTIL   N       10
+ MANAGER-NAME   A       40
+ STATUS         A       1    A/I/M              DE
+ OPEN-DATE      D
+
+NOTES:
+- WH-TYPE: D=Distribution, R=Regional, C=Cross-dock
+- STATUS: A=Active, I=Inactive, M=Maintenance
+
+===============================================================================
+5. INVENTORY DOMAIN
+===============================================================================
+
+FILE 105: INVENTORY-FILE
+------------------------
+PURPOSE: Real-time inventory levels by product and location.
+         Core transactional file - highest access frequency.
+
+FIELDS:
+ FIELD          TYPE    LEN  DESC/SUPER/SUB   DESCRIPTOR
+ -------------- ------  ---  ---------------  ----------
+ PROD-ID        N       8                      DE (COMPOUND)
+ SKU            A       15                     DE
+ LOCATION-ID    N       6                      DE (COMPOUND)
+ LOCATION-TYPE  A       1    S/W               DE
+ ON-HAND        N       8
+ RESERVED       N       8
+ ALLOCATED      N       8
+ DAMAGED        N       8
+ IN-TRANSIT     N       8
+ SAFETY-STOCK   N       8
+ REORDER-LEVEL  N       8
+ REORDER-QTY    N       8
+ LAST-COUNT-DATE D
+ LAST-RECEIPT-DATE D
+ STATUS         A       1    A/I/F              DE
+
+NOTES:
+- COMPOUND DESCRIPTOR: PROD-ID + LOCATION-ID (unique pair)
+- AVAILABLE = ON-HAND - RESERVED - ALLOCATED - DAMAGED
+- LOCATION-TYPE: S=Store, W=Warehouse
+- STATUS: A=Active, I=Inactive, F=Frozen (no transactions)
+
+CRITICAL FORMULA:
+  AVAILABLE = ON-HAND - RESERVED - ALLOCATED - DAMAGED
+  (MUST NEVER BE NEGATIVE IN CORRECT STATE)
+
+FILE 106: RESERVATION-FILE
+--------------------------
+PURPOSE: Inventory reservations linked to orders.
+
+FIELDS:
+ FIELD          TYPE    LEN  DESC/SUPER/SUB   DESCRIPTOR
+ -------------- ------  ---  ---------------  ----------
+ RESERV-ID      N       10   PRIMARY KEY       DE (UNIQUE)
+ PROD-ID        N       8                      DE
+ LOCATION-ID    N       6                      DE
+ ORDER-ID       N       10                     DE
+ QTY            N       6
+ STATUS         A       1    A/R/E/C            DE
+ CREATED-DATE   D
+ EXPIRY-DATE    D
+ RELEASED-DATE  D
+
+NOTES:
+- STATUS: A=Active, R=Released, E=Expired, C=Converted (to allocation)
+- Reservations expire after configurable period (default 3 days)
+- Released by cancellation or fulfillment allocation
+
+FILE 107: ADJUSTMENT-FILE
+-------------------------
+PURPOSE: Inventory adjustment records (stock counts, damage, etc.)
+
+FIELDS:
+ FIELD          TYPE    LEN  DESC/SUPER/SUB   DESCRIPTOR
+ -------------- ------  ---  ---------------  ----------
+ ADJ-ID         N       10   PRIMARY KEY       DE (UNIQUE)
+ PROD-ID        N       8                      DE
+ LOCATION-ID    N       6                      DE
+ ADJ-TYPE       A       2    RC/SL/DM/RN/CT    DE
+ ADJ-QTY        N       8    (CAN BE NEGATIVE)
+ ADJ-REASON     A       40
+ REFERENCE      A       20
+ ADJ-DATE       D                              DE
+ USER-ID        A       8
+ STATUS         A       1    A/R                DE
+ CREATED-DATE   D
+
+NOTES:
+- ADJ-TYPE: RC=Receipt, SL=Sold, DM=Damage, RN=Return, CT=Count
+- ADJ-QTY: Positive=increase, Negative=decrease
+- STATUS: A=Active, R=Reversed
+
+FILE 108: TRANSFER-FILE
+-----------------------
+PURPOSE: Inter-location inventory transfer records.
+
+FIELDS:
+ FIELD          TYPE    LEN  DESC/SUPER/SUB   DESCRIPTOR
+ -------------- ------  ---  ---------------  ----------
+ TRANSFER-ID    N       10   PRIMARY KEY       DE (UNIQUE)
+ PROD-ID        N       8                      DE
+ FROM-LOC-ID    N       6                      DE
+ FROM-LOC-TYPE  A       1
+ TO-LOC-ID      N       6                      DE
+ TO-LOC-TYPE    A       1
+ QTY            N       8
+ STATUS         A       2    CR/AP/SH/RC/CA    DE
+ CREATED-DATE   D
+ SHIP-DATE      D
+ RECEIVED-DATE  D
+ USER-ID        A       8
+
+NOTES:
+- STATUS: CR=Created, AP=Approved, SH=Shipped, RC=Received, CA=Cancelled
+
+FILE 109: RECONCILIATION-FILE
+-----------------------------
+PURPOSE: Inventory count reconciliation results.
+
+FIELDS:
+ FIELD          TYPE    LEN  DESC/SUPER/SUB   DESCRIPTOR
+ -------------- ------  ---  ---------------  ----------
+ RECON-ID       N       10   PRIMARY KEY       DE (UNIQUE)
+ LOCATION-ID    N       6                      DE
+ RECON-TYPE     A       1    F/C/S              DE
+ COUNT-DATE     D                              DE
+ STATUS         A       1    P/C/A              DE
+ TOTAL-ITEMS    N       8
+ MATCH-COUNT    N       8
+ OVER-COUNT     N       8
+ SHORT-COUNT    N       8
+ VARIANCE-AMT   N(11.2)
+ USER-ID        A       8
+
+NOTES:
+- RECON-TYPE: F=Full, C=Cycle, S=Spot
+- STATUS: P=Pending, C=Completed, A=Approved
+
+FILE 110: REPLENISHMENT-FILE
+----------------------------
+PURPOSE: Auto-replenishment requests generated by inventory system.
+
+FIELDS:
+ FIELD          TYPE    LEN  DESC/SUPER/SUB   DESCRIPTOR
+ -------------- ------  ---  ---------------  ----------
+ REPL-ID        N       10   PRIMARY KEY       DE (UNIQUE)
+ PROD-ID        N       8                      DE
+ LOCATION-ID    N       6                      DE
+ REPL-TYPE      A       2    MN/SS/EM           DE
+ SUGGESTED-QTY  N       8
+ APPROVED-QTY   N       8
+ SOURCE-LOC-ID  N       6
+ PO-ID          N       10
+ STATUS         A       1    P/A/O/C/R          DE
+ CREATED-DATE   D
+ APPROVED-DATE  D
+
+NOTES:
+- REPL-TYPE: MN=Min/Max, SS=Safety Stock, EM=Emergency
+- STATUS: P=Pending, A=Approved, O=Ordered, C=Complete, R=Rejected
+
+===============================================================================
+6. ORDER DOMAIN
+===============================================================================
+
+FILE 111: ORDER-FILE
+--------------------
+PURPOSE: Sales order header records for all channels.
+
+FIELDS:
+ FIELD          TYPE    LEN  DESC/SUPER/SUB   DESCRIPTOR
+ -------------- ------  ---  ---------------  ----------
+ ORDER-ID       N       10   PRIMARY KEY       DE (UNIQUE)
+ ORDER-NUMBER   A       12                     DE (UNIQUE)
+ CUST-ID        N       8                      DE
+ STORE-ID       N       4                      DE
+ CHANNEL        A       2    ST/WB/PH/MO       DE
+ ORDER-TYPE     A       2    SA/RT/EX/WH       DE
+ STATUS         A       3                      DE
+ PRIORITY       N       1    1/2/3
+ NUM-LINES      N       3
+ SUBTOTAL-AMT   N(11.2)
+ DISCOUNT-AMT   N(11.2)
+ TAX-AMT        N(11.2)
+ SHIPPING-AMT   N(9.2)
+ TOTAL-AMT      N(11.2)
+ PAID-AMT       N(11.2)
+ PROMO-ID       N       8
+ COUPON-ID      N       10
+ CONFIRMATION-NO A      12
+ NOTES          A       200
+ ORDER-DATE     D                              DE
+ SHIP-DATE      D
+ COMPLETE-DATE  D
+ CREATED-USER   A       8
+ UPDATED-DATE   D
+
+NOTES:
+- STATUS FLOW: NEW>VAL>RES>CON>PAD>ALC>SHP>CMP (also CAN, RET)
+- CHANNEL: ST=Store, WB=Web, PH=Phone, MO=Mail Order
+- ORDER-TYPE: SA=Sale, RT=Return, EX=Exchange, WH=Wholesale
+- PRIORITY: 1=Urgent, 2=High, 3=Normal
+
+FILE 112: ORDER-LINE-FILE
+-------------------------
+PURPOSE: Individual line items within an order.
+
+FIELDS:
+ FIELD          TYPE    LEN  DESC/SUPER/SUB   DESCRIPTOR
+ -------------- ------  ---  ---------------  ----------
+ ORDER-LINE-ID  N       12   PRIMARY KEY       DE (UNIQUE)
+ ORDER-ID       N       10                     DE
+ LINE-NO        N       3
+ PROD-ID        N       8                      DE
+ SKU            A       15                     DE
+ DESCRIPTION    A       60
+ QTY-ORDERED    N       6
+ QTY-SHIPPED    N       6
+ QTY-RETURNED   N       6
+ UNIT-PRICE     N(9.2)
+ UNIT-COST      N(9.2)
+ DISCOUNT-AMT   N(9.2)
+ TAX-AMT        N(9.2)
+ LINE-TOTAL     N(11.2)
+ PROMO-ID       N       8
+ STATUS         A       3    ACT/CAN/SHP/RET   DE
+
+FILE 113: ORDER-HISTORY-FILE
+----------------------------
+PURPOSE: Complete audit trail of order status changes.
+
+FIELDS:
+ FIELD          TYPE    LEN  DESC/SUPER/SUB   DESCRIPTOR
+ -------------- ------  ---  ---------------  ----------
+ HIST-ID        N       12   PRIMARY KEY       DE (UNIQUE)
+ ORDER-ID       N       10                     DE
+ OLD-STATUS     A       3
+ NEW-STATUS     A       3
+ CHANGE-DATE    D                              DE
+ CHANGE-TIME    T
+ CHANGE-USER    A       8
+ CHANGE-REASON  A       60
+ CHANGE-SOURCE  A       8    ONLINE/BATCH/API
+
+===============================================================================
+7. PRICING DOMAIN
+===============================================================================
+
+FILE 120: STORE-PRICE-FILE
+--------------------------
+PURPOSE: Store-specific price overrides for products.
+
+FIELDS:
+ FIELD          TYPE    LEN  DESC/SUPER/SUB   DESCRIPTOR
+ -------------- ------  ---  ---------------  ----------
+ STORE-PRICE-ID N       10   PRIMARY KEY       DE (UNIQUE)
+ PROD-ID        N       8                      DE
+ STORE-ID       N       4                      DE
+ PRICE          N(9.2)
+ EFFECTIVE-DATE D                              DE
+ EXPIRY-DATE    D
+ PRICE-TYPE     A       2    RG/CL/SE           DE
+ STATUS         A       1    A/I/X              DE
+
+NOTES:
+- PRICE-TYPE: RG=Regular, CL=Clearance, SE=Seasonal
+- STATUS: A=Active, I=Inactive, X=Expired
+- Overrides LIST-PRICE from PRODUCT-FILE when active
+
+FILE 121: PROMOTION-FILE
+------------------------
+PURPOSE: Promotion definitions with discount rules.
+
+FIELDS:
+ FIELD          TYPE    LEN  DESC/SUPER/SUB   DESCRIPTOR
+ -------------- ------  ---  ---------------  ----------
+ PROMO-ID       N       8    PRIMARY KEY       DE (UNIQUE)
+ NAME           A       40
+ DESCRIPTION    A       100
+ DISC-TYPE      A       2    PC/AM/BG/FX/QD    DE
+ DISC-VALUE     N(9.2)
+ MIN-QTY        N       6
+ MIN-AMOUNT     N(9.2)
+ MAX-USES       N       6
+ CURRENT-USES   N       6
+ STACKABLE      A       1    Y/N
+ STORE-ID       N       4    (0=ALL)            DE
+ START-DATE     D                              DE
+ END-DATE       D
+ STATUS         A       1    A/I/X/S            DE
+ CREATED-DATE   D
+ CREATED-USER   A       8
+
+NOTES:
+- DISC-TYPE: PC=Percentage, AM=Fixed Amount, BG=Buy-Get,
+  FX=Fixed Price, QD=Quantity Discount
+- STATUS: A=Active, I=Inactive, X=Exhausted, S=Scheduled
+
+FILE 122: PROMO-ITEM-FILE
+-------------------------
+PURPOSE: Products included in or excluded from a promotion.
+
+FIELDS:
+ FIELD          TYPE    LEN  DESC/SUPER/SUB   DESCRIPTOR
+ -------------- ------  ---  ---------------  ----------
+ PROMO-ITEM-ID  N       10   PRIMARY KEY       DE (UNIQUE)
+ PROMO-ID       N       8                      DE
+ PROD-ID        N       8                      DE
+ INCLUDE-FLAG   A       1    I/E    (Include/Exclude)
+
+FILE 123: COUPON-FILE
+---------------------
+PURPOSE: Coupon definitions for promotional discounts.
+
+FIELDS:
+ FIELD          TYPE    LEN  DESC/SUPER/SUB   DESCRIPTOR
+ -------------- ------  ---  ---------------  ----------
+ COUPON-ID      N       10   PRIMARY KEY       DE (UNIQUE)
+ CODE           A       20                     DE (UNIQUE)
+ DISC-TYPE      A       2    PC/AM/FX/FS
+ DISC-VALUE     N(9.2)
+ MIN-ORDER-AMT  N(9.2)
+ MAX-USES       N       6
+ CURRENT-USES   N       6
+ SINGLE-USE     A       1    Y/N
+ CUST-ID        N       8    (0=ALL)            DE
+ TOTAL-DISC-AMT N(11.2)
+ START-DATE     D
+ END-DATE       D
+ STATUS         A       1    A/I/X/U            DE
+ CREATED-DATE   D
+
+NOTES:
+- DISC-TYPE: PC=Percentage, AM=Amount, FX=Fixed Price, FS=Free Shipping
+- STATUS: A=Active, I=Inactive, X=Exhausted, U=Used (single-use)
+
+FILE 124: TAX-RATE-FILE
+-----------------------
+PURPOSE: Tax rates by jurisdiction and product category.
+
+FIELDS:
+ FIELD          TYPE    LEN  DESC/SUPER/SUB   DESCRIPTOR
+ -------------- ------  ---  ---------------  ----------
+ TAX-ID         N       8    PRIMARY KEY       DE (UNIQUE)
+ TAX-CODE       A       4                      DE
+ JURISDICTION   A       2    ST/CN/CT/SP        DE
+ STATE          A       2                      DE
+ COUNTY         A       20
+ CITY           A       30
+ RATE           N(5.4)
+ EFFECTIVE-DATE D
+ EXPIRY-DATE    D
+ STATUS         A       1    A/I               DE
+
+NOTES:
+- JURISDICTION: ST=State, CN=County, CT=City, SP=Special
+- Multiple rates can apply (state + county + city + special)
+- TAX-CODE mapped to product TAX-CODE field
+
+===============================================================================
+8. PROCUREMENT DOMAIN
+===============================================================================
+
+FILE 130: SUPPLIER-FILE
+-----------------------
+PURPOSE: Supplier/vendor master data with performance metrics.
+
+FIELDS:
+ FIELD          TYPE    LEN  DESC/SUPER/SUB   DESCRIPTOR
+ -------------- ------  ---  ---------------  ----------
+ SUPP-ID        N       8    PRIMARY KEY       DE (UNIQUE)
+ NAME           A       60
+ CONTACT-NAME   A       40
+ EMAIL          A       60                     DE
+ PHONE          A       15
+ ADDRESS        A       60
+ CITY           A       30
+ STATE          A       2
+ ZIP            A       10
+ COUNTRY        A       2
+ SUPP-TYPE      A       2    MF/DS/WH/IM/LO    DE
+ PAYMENT-TERMS  A       10
+ LEAD-TIME-DAYS N       3
+ MIN-ORDER-AMT  N(9.2)
+ FREIGHT-TERMS  A       10
+ RATING         N(3.1)
+ ON-TIME-PCT    N(5.1)
+ QUALITY-PCT    N(5.1)
+ FILL-RATE      N(5.1)
+ TOTAL-PO-COUNT N       8
+ TOTAL-PO-AMT   N(13.2)
+ LAST-PO-DATE   D
+ LAST-EVAL-DATE D
+ STATUS         A       1    A/I/P/B            DE
+ CREATED-DATE   D
+
+NOTES:
+- SUPP-TYPE: MF=Manufacturer, DS=Distributor, WH=Wholesale,
+  IM=Import, LO=Local
+- STATUS: A=Active, I=Inactive, P=Probation, B=Blocked
+- RATING: 0.0-10.0 scale (auto-calculated from metrics)
+- SCORE = ON-TIME*0.4 + QUALITY*0.3 + FILL-RATE*0.3
+
+FILE 131: PO-HEADER-FILE
+------------------------
+PURPOSE: Purchase order headers sent to suppliers.
+
+FIELDS:
+ FIELD          TYPE    LEN  DESC/SUPER/SUB   DESCRIPTOR
+ -------------- ------  ---  ---------------  ----------
+ PO-ID          N       10   PRIMARY KEY       DE (UNIQUE)
+ PO-NUMBER      A       12                     DE (UNIQUE)
+ SUPP-ID        N       8                      DE
+ STATUS         A       2                      DE
+ NUM-LINES      N       3
+ TOTAL-AMT      N(11.2)
+ RECEIVED-AMT   N(11.2)
+ ORDER-DATE     D                              DE
+ EXPECTED-DATE  D
+ RECEIVED-DATE  D
+ APPROVED-BY    A       8
+ APPROVED-DATE  D
+ WAREHOUSE-ID   N       4                      DE
+ NOTES          A       200
+ CREATED-USER   A       8
+ CREATED-DATE   D
+
+NOTES:
+- STATUS FLOW: DR>SB>AP>SH>PR/RC>CL (also CA)
+- DR=Draft, SB=Submitted, AP=Approved, SH=Shipped,
+  PR=Partial Receipt, RC=Received, CL=Closed, CA=Cancelled
+
+FILE 132: PO-LINE-FILE
+----------------------
+PURPOSE: Individual line items on purchase orders.
+
+FIELDS:
+ FIELD          TYPE    LEN  DESC/SUPER/SUB   DESCRIPTOR
+ -------------- ------  ---  ---------------  ----------
+ PO-LINE-ID     N       12   PRIMARY KEY       DE (UNIQUE)
+ PO-ID          N       10                     DE
+ LINE-NO        N       3
+ PROD-ID        N       8                      DE
+ SKU            A       15
+ QTY-ORDERED    N       6
+ QTY-RECEIVED   N       6
+ QTY-DAMAGED    N       6
+ UNIT-COST      N(9.2)
+ LINE-TOTAL     N(11.2)
+ STATUS         A       2    OR/PR/RC/CA        DE
+
+NOTES:
+- STATUS: OR=Ordered, PR=Partial Receipt, RC=Received, CA=Cancelled
+
+===============================================================================
+9. PAYMENT/FULFILLMENT DOMAIN
+===============================================================================
+
+FILE 140: PAYMENT-FILE
+---------------------
+PURPOSE: Payment transactions for orders.
+
+FIELDS:
+ FIELD          TYPE    LEN  DESC/SUPER/SUB   DESCRIPTOR
+ -------------- ------  ---  ---------------  ----------
+ PAY-ID         N       10   PRIMARY KEY       DE (UNIQUE)
+ ORDER-ID       N       10                     DE
+ METHOD         A       2    CC/DC/GC/CH/CA/WL/PP  DE
+ STATUS         A       2                      DE
+ AMOUNT         N(11.2)
+ CAPTURED-AMT   N(11.2)
+ REFUND-AMT     N(11.2)
+ CARD-LAST4     A       4
+ CARD-TYPE      A       4    VISA/MC/AMEX/DISC
+ AUTH-CODE      A       12
+ GATEWAY        A       10
+ GATEWAY-REF    A       30
+ FRAUD-SCORE    N       3
+ AUTH-DATE      D                              DE
+ CAPTURE-DATE   D
+ CURRENCY       A       3    INIT 'USD'
+
+NOTES:
+- METHOD: CC=Credit Card, DC=Debit Card, GC=Gift Card,
+  CH=Check, CA=Cash, WL=Wallet, PP=PayPal
+- STATUS: AU=Authorized, CP=Captured, RF=Refunded,
+  RV=Reversed, EX=Expired, FL=Failed, PR=Partial Refund
+
+FILE 141: SHIPMENT-FILE
+-----------------------
+PURPOSE: Shipment records for order fulfillment.
+
+FIELDS:
+ FIELD          TYPE    LEN  DESC/SUPER/SUB   DESCRIPTOR
+ -------------- ------  ---  ---------------  ----------
+ SHIP-ID        N       10   PRIMARY KEY       DE (UNIQUE)
+ ORDER-ID       N       10                     DE
+ TRACKING-NO    A       30                     DE
+ CARRIER        A       4    UPS/FDX/USPS/DHL  DE
+ SERVICE-LEVEL  A       2    GR/EX/ON
+ STATUS         A       2                      DE
+ SHIP-FROM-LOC  N       6
+ SHIP-FROM-TYPE A       1
+ TOTAL-WEIGHT   N(7.2)
+ TOTAL-ITEMS    N       4
+ SHIP-COST      N(9.2)
+ CREATED-DATE   D
+ SHIP-DATE      D                              DE
+ DELIVERY-DATE  D
+
+NOTES:
+- STATUS FLOW: CR>PK>PD>SH>DL
+- CR=Created, PK=Picked, PD=Packed, SH=Shipped, DL=Delivered
+- SERVICE-LEVEL: GR=Ground, EX=Express, ON=Overnight
+
+FILE 142: SHIPMENT-LINE-FILE
+----------------------------
+PURPOSE: Individual items within a shipment.
+
+FIELDS:
+ FIELD          TYPE    LEN  DESC/SUPER/SUB   DESCRIPTOR
+ -------------- ------  ---  ---------------  ----------
+ SHIP-LINE-ID   N       12   PRIMARY KEY       DE (UNIQUE)
+ SHIP-ID        N       10                     DE
+ ORDER-LINE-ID  N       12                     DE
+ PROD-ID        N       8
+ QTY-SHIPPED    N       6
+ FROM-LOC-ID    N       6
+ ALLOC-TYPE     A       4    NORM/SPLT/BACK
+
+FILE 143: SETTLEMENT-FILE
+-------------------------
+PURPOSE: Payment settlement/batch records for financial reconciliation.
+
+FIELDS:
+ FIELD          TYPE    LEN  DESC/SUPER/SUB   DESCRIPTOR
+ -------------- ------  ---  ---------------  ----------
+ SETTLE-ID      N       10   PRIMARY KEY       DE (UNIQUE)
+ PAY-ID         N       10                     DE
+ TYPE           A       2    CP/RF              DE
+ AMOUNT         N(11.2)
+ SETTLE-DATE    D                              DE
+ BATCH-ID       A       12                     DE
+ GATEWAY-REF    A       30
+ STATUS         A       2    PE/AC/RJ           DE
+
+NOTES:
+- TYPE: CP=Capture, RF=Refund
+- STATUS: PE=Pending, AC=Accepted, RJ=Rejected
+
+===============================================================================
+10. RETURNS DOMAIN
+===============================================================================
+
+FILE 150: RETURN-FILE
+--------------------
+PURPOSE: Return/RMA header records.
+
+FIELDS:
+ FIELD          TYPE    LEN  DESC/SUPER/SUB   DESCRIPTOR
+ -------------- ------  ---  ---------------  ----------
+ RETURN-ID      N       10   PRIMARY KEY       DE (UNIQUE)
+ RMA-NUMBER     A       12                     DE (UNIQUE)
+ ORDER-ID       N       10                     DE
+ CUST-ID        N       8                      DE
+ STATUS         A       3                      DE
+ REASON-CODE    A       4                      DE
+ REFUND-AMT     N(11.2)
+ RETURN-METHOD  A       1    S/M    (Store/Mail)
+ CREATED-DATE   D                              DE
+ APPROVED-DATE  D
+ RECEIVED-DATE  D
+ CLOSED-DATE    D
+ UPDATED-DATE   D
+ NOTES          A       200
+
+NOTES:
+- STATUS FLOW: REQ>APR/REJ, APR>RCV, RCV>INS, INS>RST/DMG/REF,
+  RST/DMG>REF, REF>CLS
+- REASON-CODE: DEFN/WRNG/DMGD/NOFI/CHGD/OTHR
+
+FILE 151: RETURN-LINE-FILE
+--------------------------
+PURPOSE: Individual items being returned.
+
+FIELDS:
+ FIELD          TYPE    LEN  DESC/SUPER/SUB   DESCRIPTOR
+ -------------- ------  ---  ---------------  ----------
+ RET-LINE-ID    N       12   PRIMARY KEY       DE (UNIQUE)
+ RETURN-ID      N       10                     DE
+ ORDER-LINE-ID  N       12
+ PROD-ID        N       8                      DE
+ QTY            N       6
+ CONDITION      A       1    N/O/D              DE
+ REASON         A       4
+ REFUND-AMT     N(9.2)
+ DISPOSITION    A       3    RST/DMG/DSP
+ STATUS         A       3    REQ/RCV/INS/RST/DMG/REF  DE
+
+NOTES:
+- CONDITION: N=New (unopened), O=Opened, D=Damaged
+- DISPOSITION: RST=Restock, DMG=Damaged, DSP=Dispose
+
+===============================================================================
+11. SYSTEM/INFRASTRUCTURE
+===============================================================================
+
+FILE 200: ERROR-LOG
+-------------------
+PURPOSE: Application error logging for debugging and monitoring.
+
+FIELDS:
+ FIELD          TYPE    LEN  DESC/SUPER/SUB   DESCRIPTOR
+ -------------- ------  ---  ---------------  ----------
+ ERROR-ID       N       10   PRIMARY KEY       DE (UNIQUE)
+ ERROR-DATE     D                              DE
+ ERROR-TIME     T
+ PROGRAM-NAME   A       8                      DE
+ ERROR-NUM      N       5
+ ERROR-LINE     N       5
+ ERROR-TEXT     A       200
+ DOMAIN         A       4                      DE
+ SEVERITY       A       1    E/W/I              DE
+ USER-ID        A       8
+
+NOTES:
+- SEVERITY: E=Error, W=Warning, I=Informational
+- Auto-purge records older than 90 days (batch)
+
+FILE 210: AUDIT-LOG
+-------------------
+PURPOSE: Complete audit trail for all data changes.
+
+FIELDS:
+ FIELD          TYPE    LEN  DESC/SUPER/SUB   DESCRIPTOR
+ -------------- ------  ---  ---------------  ----------
+ AUDIT-ID       N       12   PRIMARY KEY       DE (UNIQUE)
+ DOMAIN         A       4                      DE
+ PROGRAM-NAME   A       8                      DE
+ ACTION         A       1    C/U/D              DE
+ SOURCE         A       8                      DE
+ ENTITY-ID      A       20                     DE
+ ENTITY-ID2     A       20
+ DESCRIPTION    A       100
+ AUDIT-DATE     D                              DE
+ AUDIT-TIME     T
+ USER-ID        A       8
+
+NOTES:
+- ACTION: C=Create, U=Update, D=Delete
+- SOURCE: ONLINE/BATCH/API/SYSTEM
+- Written by AUDITN subprogram (all modules)
+
+FILE 220: SEQUENCE-CONTROL
+--------------------------
+PURPOSE: Sequence number generation for various entity types.
+
+FIELDS:
+ FIELD          TYPE    LEN  DESC/SUPER/SUB   DESCRIPTOR
+ -------------- ------  ---  ---------------  ----------
+ SEQ-TYPE       A       8    PRIMARY KEY       DE (UNIQUE)
+ CURRENT-VALUE  N       12
+ PREFIX         A       4
+ INCREMENT      N       4    INIT 1
+
+NOTES:
+- SEQ-TYPE: ORD/CUS/PROD/PO/PAY/SHIP/RET/ADJ/TRN/RES/REP/etc.
+- Thread-safe via HOLD/UPDATE pattern with retry
+- Managed by SEQNON subprogram
+
+FILE 230: MESSAGE-FILE
+---------------------
+PURPOSE: System message catalog for user-facing messages.
+
+FIELDS:
+ FIELD          TYPE    LEN  DESC/SUPER/SUB   DESCRIPTOR
+ -------------- ------  ---  ---------------  ----------
+ MSG-ID         A       10   PRIMARY KEY       DE (UNIQUE)
+ MSG-TEXT       A       200
+ MSG-TYPE       A       1    E/W/I/C
+ LANGUAGE       A       2    INIT 'EN'
+
+NOTES:
+- MSG-TYPE: E=Error, W=Warning, I=Info, C=Confirmation
+- Managed by MSGHU subprogram
+
+FILE 240: LOCK-TABLE
+--------------------
+PURPOSE: Application-level record locking for long transactions.
+
+FIELDS:
+ FIELD          TYPE    LEN  DESC/SUPER/SUB   DESCRIPTOR
+ -------------- ------  ---  ---------------  ----------
+ LOCK-ID        N       10   PRIMARY KEY       DE (UNIQUE)
+ ENTITY-TYPE    A       8                      DE
+ ENTITY-ID      A       20                     DE
+ LOCKED-BY      A       8
+ LOCKED-DATE    D
+ LOCKED-TIME    T
+ EXPIRY-DATE    D
+ EXPIRY-TIME    T
+ STATUS         A       1    A/R/E              DE
+
+NOTES:
+- STATUS: A=Active, R=Released, E=Expired
+- Default lock timeout: 30 minutes
+- Managed by LOCKN subprogram
+- EOD batch cleans expired locks
+
+FILE 250: CONFIG-FILE
+---------------------
+PURPOSE: System configuration key-value store.
+
+FIELDS:
+ FIELD          TYPE    LEN  DESC/SUPER/SUB   DESCRIPTOR
+ -------------- ------  ---  ---------------  ----------
+ CONFIG-KEY     A       30   PRIMARY KEY       DE (UNIQUE)
+ CONFIG-VALUE   A       100
+ CONFIG-TYPE    A       1    S/N/D/L
+ DESCRIPTION    A       100
+ DOMAIN         A       4                      DE
+ LAST-MODIFIED  D
+
+NOTES:
+- CONFIG-TYPE: S=String, N=Numeric, D=Date, L=Logical
+- Managed by CONFIGN subprogram
+- Cached in memory during session
+
+===============================================================================
+12. CROSS-DOMAIN RELATIONSHIPS
+===============================================================================
+
+PRIMARY RELATIONSHIPS (FOREIGN KEYS):
+--------------------------------------
+CUSTOMER -> ORDER:      CUST-ID (100) -> CUST-ID (111)
+CUSTOMER -> RETURN:     CUST-ID (100) -> CUST-ID (150)
+PRODUCT  -> ORDER-LINE: PROD-ID (101) -> PROD-ID (112)
+PRODUCT  -> INVENTORY:  PROD-ID (101) -> PROD-ID (105)
+PRODUCT  -> PO-LINE:    PROD-ID (101) -> PROD-ID (132)
+PRODUCT  -> CATEGORY:   CAT-ID (101) -> CAT-ID (102)
+PRODUCT  -> SUPPLIER:   SUPP-ID (101) -> SUPP-ID (130)
+STORE    -> ORDER:      STORE-ID (103) -> STORE-ID (111)
+STORE    -> INVENTORY:  STORE-ID (103) -> LOCATION-ID (105)
+WAREHOUSE-> INVENTORY:  WH-ID (104) -> LOCATION-ID (105)
+ORDER    -> ORDER-LINE: ORDER-ID (111) -> ORDER-ID (112)
+ORDER    -> PAYMENT:    ORDER-ID (111) -> ORDER-ID (140)
+ORDER    -> SHIPMENT:   ORDER-ID (111) -> ORDER-ID (141)
+ORDER    -> RETURN:     ORDER-ID (111) -> ORDER-ID (150)
+ORDER    -> HISTORY:    ORDER-ID (111) -> ORDER-ID (113)
+ORDER    -> RESERVATION:ORDER-ID (111) -> ORDER-ID (106)
+SUPPLIER -> PO:         SUPP-ID (130) -> SUPP-ID (131)
+PO       -> PO-LINE:    PO-ID (131) -> PO-ID (132)
+PAYMENT  -> SETTLEMENT: PAY-ID (140) -> PAY-ID (143)
+SHIPMENT -> SHIP-LINE:  SHIP-ID (141) -> SHIP-ID (142)
+RETURN   -> RETURN-LINE:RETURN-ID (150) -> RETURN-ID (151)
+PROMOTION-> PROMO-ITEM: PROMO-ID (121) -> PROMO-ID (122)
+
+CROSS-DOMAIN DEPENDENCIES:
+----------------------------
+ORDER PROCESSING:
+  ORDER (111) -> INVENTORY CHECK (105) -> RESERVATION (106)
+  ORDER (111) -> PRICING (101/120/121/123/124)
+  ORDER (111) -> PAYMENT AUTH (140)
+  ORDER (111) -> ALLOCATION -> INVENTORY UPDATE (105)
+  ORDER (111) -> SHIPMENT (141/142) -> INVENTORY DEDUCT (105)
+
+RETURN PROCESSING:
+  RETURN (150) -> ORDER LOOKUP (111)
+  RETURN (150) -> INVENTORY RESTOCK (105)
+  RETURN (150) -> PAYMENT REFUND (140/143)
+  RETURN (150) -> CUSTOMER SPEND UPDATE (100)
+
+PROCUREMENT:
+  PO (131) -> SUPPLIER (130)
+  PO RECEIPT (131) -> INVENTORY UPDATE (105)
+  PO RECEIPT -> BACKORDER CHECK -> REPLENISHMENT (110)
+
+===============================================================================
+13. STATUS CODE REFERENCE
+===============================================================================
+
+ORDER STATUS FLOW:
+  NEW -> VAL -> RES -> CON -> PAD -> ALC -> SHP -> CMP
+  Any -> CAN (cancellation)
+  SHP/CMP -> RET (return initiated)
+
+  NEW = New Order (not yet validated)
+  VAL = Validated (customer, items, pricing verified)
+  RES = Reserved (inventory reserved)
+  CON = Confirmed (confirmation sent to customer)
+  PAD = Paid (payment authorized/captured)
+  ALC = Allocated (inventory allocated for fulfillment)
+  SHP = Shipped (shipment created, in transit)
+  CMP = Completed (delivered and confirmed)
+  CAN = Cancelled
+  RET = Return Initiated
+
+RETURN STATUS FLOW:
+  REQ -> APR -> RCV -> INS -> RST/DMG -> REF -> CLS
+  REQ -> REJ (rejected)
+
+  REQ = Requested
+  APR = Approved
+  REJ = Rejected
+  RCV = Received (items received at warehouse/store)
+  INS = Inspected
+  RST = Restocked (returned to inventory)
+  DMG = Damaged (sent to damaged inventory)
+  REF = Refunded (payment refund processed)
+  CLS = Closed
+
+PO STATUS FLOW:
+  DR -> SB -> AP -> SH -> PR/RC -> CL
+  Any -> CA (cancelled)
+
+  DR = Draft
+  SB = Submitted
+  AP = Approved
+  SH = Shipped (by supplier)
+  PR = Partial Receipt
+  RC = Received (complete)
+  CL = Closed
+  CA = Cancelled
+
+SHIPMENT STATUS FLOW:
+  CR -> PK -> PD -> SH -> DL
+
+  CR = Created
+  PK = Picked
+  PD = Packed
+  SH = Shipped
+  DL = Delivered
+
+PAYMENT STATUS:
+  AU = Authorized
+  CP = Captured
+  RF = Refunded (full)
+  PR = Partial Refund
+  RV = Reversed
+  EX = Expired
+  FL = Failed
+
+INVENTORY TRANSFER STATUS:
+  CR -> AP -> SH -> RC
+  Any -> CA
+
+===============================================================================
+14. ACCESS PATTERNS
+===============================================================================
+
+HIGH-FREQUENCY ACCESS (ONLINE/TRANSACTIONAL):
+----------------------------------------------
+1. INVENTORY CHECK: FIND INVENTORY BY PROD-ID + LOCATION-ID
+   File 105, compound descriptor, ~50,000 reads/day
+2. ORDER LOOKUP: FIND ORDER BY ORDER-ID or ORDER-NUMBER
+   File 111, unique descriptor, ~30,000 reads/day
+3. CUSTOMER LOOKUP: FIND CUSTOMER BY CUST-ID or EMAIL
+   File 100, unique descriptor, ~20,000 reads/day
+4. PRODUCT LOOKUP: FIND PRODUCT BY PROD-ID or SKU
+   File 101, unique descriptor, ~40,000 reads/day
+5. RESERVATION CREATE: STORE RESERVATION, UPDATE INVENTORY
+   Files 106+105, ~10,000 writes/day
+
+BATCH ACCESS (EOD PROCESSING):
+-------------------------------
+1. ORDER SCAN: READ ORDER BY ORDER-ID (full table scan)
+   File 111, sequential, ~5,000,000 records
+2. INVENTORY SCAN: READ INVENTORY BY PROD-ID (full scan)
+   File 105, sequential, ~2,000,000 records
+3. PAYMENT SCAN: FIND PAYMENT BY AUTH-DATE (date range)
+   File 140, date descriptor, ~20,000 records/day
+4. PROMOTION SCAN: READ PROMOTION BY PROMO-ID
+   File 121, sequential, ~5,000 records
+
+REPORT ACCESS:
+--------------
+1. SALES BY STORE/DATE: FIND ORDER BY DATE RANGE + STORE
+   Files 111+112, compound search
+2. INVENTORY STATUS: READ INVENTORY BY LOCATION
+   File 105, sequential scan with location filter
+3. SUPPLIER PERFORMANCE: FIND PO BY SUPPLIER + DATE RANGE
+   Files 131+132, compound search
+
+===============================================================================
+END OF DOCUMENT
+===============================================================================

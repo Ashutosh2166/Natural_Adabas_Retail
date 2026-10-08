@@ -1,0 +1,171 @@
+* >Natural Source Code: AUDITN
+* SUBPROGRAM: AUDITN - AUDIT TRAIL WRITER
+* DESCRIPTION: WRITES AUDIT RECORDS FOR ALL DATA CHANGES
+*              TRACKS CREATE/UPDATE/DELETE ACTIONS
+* LIBRARY: RETAILCORE
+* ADABAS FILE: 210 (AUDIT-LOG)
+* CREATED: 1998-04-15  R. PETERSON
+* MODIFIED: 2006-03-20 - ADDED ENTITY TYPE TRACKING
+* MODIFIED: 2013-10-05 - ADDED BEFORE/AFTER IMAGING
+* MODIFIED: 2019-08-14 - ADDED BATCH AUDIT SUPPORT
+* MODIFIED: 2022-12-01 - ADDED GDPR COMPLIANCE FIELDS
+* -------------------------------------------------------
+DEFINE DATA
+PARAMETER
+  1 P-ENTITY-TYPE         (A4)    /* CUST PROD ORD INV PAY RET */
+  1 P-ENTITY-ID           (A15)   /* ENTITY IDENTIFIER */
+  1 P-ACTION              (A1)    /* C=CREATE U=UPDATE D=DELETE */
+  1 P-FIELD-NAME          (A30)   /* FIELD THAT CHANGED */
+  1 P-BEFORE-VALUE        (A250)  /* VALUE BEFORE CHANGE */
+  1 P-AFTER-VALUE         (A250)  /* VALUE AFTER CHANGE */
+  1 P-REASON              (A60)   /* REASON FOR CHANGE */
+*
+LOCAL
+  1 #TIMESTAMP            (T)
+  1 #CURRENT-DATE         (D)
+  1 #AUDIT-SEQ            (N10)
+  1 #USER-ID              (A8)
+  1 #TERMINAL-ID          (A8)
+  1 #PROGRAM-NAME         (A8)
+  1 #LIBRARY-NAME         (A8)
+  1 #DB-RESPONSE          (N4)
+  1 #ONLINE-FLAG          (A1)
+  1 #ACTION-TEXT           (A10)
+  1 #VALID-ENTITY         (A1)
+  1 #VALID-ACTION         (A1)
+*
+* ADABAS FILE 210 - AUDIT LOG
+*
+  1 AUDIT-LOG-VIEW VIEW OF AUDIT-LOG
+    2 AU-SEQ-NO            (N10)
+    2 AU-DATE              (D)
+    2 AU-TIMESTAMP         (T)
+    2 AU-ENTITY-TYPE       (A4)
+    2 AU-ENTITY-ID         (A15)
+    2 AU-ACTION            (A1)
+    2 AU-FIELD-NAME        (A30)
+    2 AU-BEFORE-VALUE      (A250)
+    2 AU-AFTER-VALUE       (A250)
+    2 AU-REASON            (A60)
+    2 AU-USER              (A8)
+    2 AU-TERMINAL          (A8)
+    2 AU-PROGRAM           (A8)
+    2 AU-LIBRARY           (A8)
+    2 AU-ONLINE-FLAG       (A1)
+END-DEFINE
+*
+* -------------------------------------------------------
+* INITIALIZE CONTEXT
+* -------------------------------------------------------
+MOVE *TIMESTMP    TO #TIMESTAMP
+MOVE *DATX        TO #CURRENT-DATE
+MOVE *USER        TO #USER-ID
+MOVE *INIT-ID     TO #TERMINAL-ID
+MOVE *PROGRAM     TO #PROGRAM-NAME
+MOVE *LIBRARY-ID  TO #LIBRARY-NAME
+*
+IF #TERMINAL-ID = ' '
+  MOVE 'N' TO #ONLINE-FLAG
+ELSE
+  MOVE 'Y' TO #ONLINE-FLAG
+END-IF
+*
+* -------------------------------------------------------
+* VALIDATE ENTITY TYPE
+* -------------------------------------------------------
+MOVE 'N' TO #VALID-ENTITY
+DECIDE ON EVERY VALUE OF P-ENTITY-TYPE
+  VALUE 'CUST'
+    MOVE 'Y' TO #VALID-ENTITY
+  VALUE 'PROD'
+    MOVE 'Y' TO #VALID-ENTITY
+  VALUE 'ORD'
+    MOVE 'Y' TO #VALID-ENTITY
+  VALUE 'ORDL'
+    MOVE 'Y' TO #VALID-ENTITY
+  VALUE 'INV'
+    MOVE 'Y' TO #VALID-ENTITY
+  VALUE 'PAY'
+    MOVE 'Y' TO #VALID-ENTITY
+  VALUE 'RET'
+    MOVE 'Y' TO #VALID-ENTITY
+  VALUE 'SHIP'
+    MOVE 'Y' TO #VALID-ENTITY
+  VALUE 'PO'
+    MOVE 'Y' TO #VALID-ENTITY
+  VALUE 'SUPP'
+    MOVE 'Y' TO #VALID-ENTITY
+  VALUE 'STOR'
+    MOVE 'Y' TO #VALID-ENTITY
+  VALUE 'WH'
+    MOVE 'Y' TO #VALID-ENTITY
+  VALUE 'PRIC'
+    MOVE 'Y' TO #VALID-ENTITY
+  VALUE 'PROM'
+    MOVE 'Y' TO #VALID-ENTITY
+  VALUE 'TRN'
+    MOVE 'Y' TO #VALID-ENTITY
+  VALUE 'ADJ'
+    MOVE 'Y' TO #VALID-ENTITY
+  NONE VALUE
+    MOVE 'N' TO #VALID-ENTITY
+    CALLNAT 'LOGERR' 502 'AUDITN: INVALID ENTITY TYPE'
+      'W' 'AUDITN' #USER-ID
+    ESCAPE ROUTINE
+END-DECIDE
+*
+* -------------------------------------------------------
+* VALIDATE ACTION CODE
+* -------------------------------------------------------
+MOVE 'N' TO #VALID-ACTION
+DECIDE ON EVERY VALUE OF P-ACTION
+  VALUE 'C'
+    MOVE 'Y' TO #VALID-ACTION
+    MOVE 'CREATE' TO #ACTION-TEXT
+  VALUE 'U'
+    MOVE 'Y' TO #VALID-ACTION
+    MOVE 'UPDATE' TO #ACTION-TEXT
+  VALUE 'D'
+    MOVE 'Y' TO #VALID-ACTION
+    MOVE 'DELETE' TO #ACTION-TEXT
+  NONE VALUE
+    CALLNAT 'LOGERR' 503 'AUDITN: INVALID ACTION CODE'
+      'W' 'AUDITN' #USER-ID
+    ESCAPE ROUTINE
+END-DECIDE
+*
+* -------------------------------------------------------
+* GET NEXT AUDIT SEQUENCE NUMBER
+* -------------------------------------------------------
+CALLNAT 'SEQNON' 'AUDT' #AUDIT-SEQ
+*
+* -------------------------------------------------------
+* WRITE AUDIT LOG RECORD
+* -------------------------------------------------------
+STORE AUDIT-LOG-VIEW
+  AU-SEQ-NO      := #AUDIT-SEQ
+  AU-DATE         := #CURRENT-DATE
+  AU-TIMESTAMP    := #TIMESTAMP
+  AU-ENTITY-TYPE  := P-ENTITY-TYPE
+  AU-ENTITY-ID    := P-ENTITY-ID
+  AU-ACTION       := P-ACTION
+  AU-FIELD-NAME   := P-FIELD-NAME
+  AU-BEFORE-VALUE := P-BEFORE-VALUE
+  AU-AFTER-VALUE  := P-AFTER-VALUE
+  AU-REASON       := P-REASON
+  AU-USER         := #USER-ID
+  AU-TERMINAL     := #TERMINAL-ID
+  AU-PROGRAM      := #PROGRAM-NAME
+  AU-LIBRARY      := #LIBRARY-NAME
+  AU-ONLINE-FLAG  := #ONLINE-FLAG
+END-STORE
+*
+ON ERROR
+  CALLNAT 'LOGERR' 510 'AUDITN: FAILED TO WRITE AUDIT LOG'
+    'E' 'AUDITN' #USER-ID
+  ESCAPE ROUTINE
+END-ERROR
+*
+END OF TRANSACTION
+*
+END

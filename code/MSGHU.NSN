@@ -1,0 +1,143 @@
+* >Natural Source Code: MSGHU
+* SUBPROGRAM: MSGHU - MESSAGE HANDLER UTILITY
+* DESCRIPTION: LOOKS UP AND FORMATS SYSTEM MESSAGES
+*              WITH PARAMETER SUBSTITUTION
+* LIBRARY: RETAILCORE
+* ADABAS FILE: 230 (MESSAGE)
+* CREATED: 1999-01-15  S. WILLIAMS
+* MODIFIED: 2006-09-10 - ADDED MESSAGE CACHING
+* MODIFIED: 2015-04-22 - ADDED MULTI-LANGUAGE STUB
+* MODIFIED: 2020-12-01 - INCREASED PARAMETER COUNT TO 5
+* -------------------------------------------------------
+DEFINE DATA
+PARAMETER
+  1 P-MSG-CODE            (N6)    /* MESSAGE CODE */
+  1 P-SEVERITY            (A1)    /* I W E F */
+  1 P-PARAM1              (A40)   /* SUBSTITUTION PARAM 1 */
+  1 P-PARAM2              (A40)   /* SUBSTITUTION PARAM 2 */
+  1 P-PARAM3              (A40)   /* SUBSTITUTION PARAM 3 */
+  1 P-PARAM4              (A40)   /* SUBSTITUTION PARAM 4 */
+  1 P-PARAM5              (A40)   /* SUBSTITUTION PARAM 5 */
+  1 P-OUTPUT-MSG          (A200)  /* FORMATTED MESSAGE */
+  1 P-FOUND-FLAG          (A1)    /* Y=FOUND N=NOT FOUND */
+*
+LOCAL
+  1 #MSG-TEMPLATE         (A200)
+  1 #WORK-MSG             (A200)
+  1 #LANGUAGE             (A2)    INIT <'EN'>
+  1 #DEFAULT-MSG          (A200)
+  1 #SEVERITY-TEXT         (A8)
+  1 #PREFIX               (A12)
+*
+* MESSAGE CACHE - LOCAL STORAGE
+* MODIFIED 2006-09-10 - PERFORMANCE IMPROVEMENT
+  1 #CACHE-LOADED         (A1)    INIT <'N'>
+  1 #CACHE-SIZE           (N3)    INIT <0>
+  1 #CACHE-MAX            (N3)    INIT <50>
+  1 #MSG-CACHE (50)
+    2 #MC-CODE             (N6)
+    2 #MC-TEMPLATE         (A200)
+    2 #MC-SEVERITY         (A1)
+  1 #CACHE-IDX            (N3)
+  1 #CACHE-HIT            (A1)
+*
+* ADABAS FILE 230 - MESSAGE
+  1 MSG-VIEW VIEW OF MESSAGE-FILE
+    2 MF-CODE              (N6)
+    2 MF-LANGUAGE          (A2)
+    2 MF-SEVERITY          (A1)
+    2 MF-TEMPLATE          (A200)
+    2 MF-ACTIVE            (A1)
+END-DEFINE
+*
+* -------------------------------------------------------
+* INITIALIZE
+* -------------------------------------------------------
+MOVE 'N' TO P-FOUND-FLAG
+RESET P-OUTPUT-MSG
+*
+* -------------------------------------------------------
+* CHECK MESSAGE CACHE FIRST
+* -------------------------------------------------------
+MOVE 'N' TO #CACHE-HIT
+IF #CACHE-SIZE > 0
+  FOR #CACHE-IDX = 1 TO #CACHE-SIZE
+    IF #MSG-CACHE.#MC-CODE(#CACHE-IDX) = P-MSG-CODE
+      MOVE #MSG-CACHE.#MC-TEMPLATE(#CACHE-IDX) TO #MSG-TEMPLATE
+      MOVE 'Y' TO #CACHE-HIT
+      MOVE 'Y' TO P-FOUND-FLAG
+      ESCAPE BOTTOM
+    END-IF
+  END-FOR
+END-IF
+*
+* -------------------------------------------------------
+* IF NOT IN CACHE - LOOK UP IN DATABASE
+* -------------------------------------------------------
+IF #CACHE-HIT NE 'Y'
+  FIND MSG-VIEW WITH MF-CODE = P-MSG-CODE
+      AND MF-LANGUAGE = #LANGUAGE
+      AND MF-ACTIVE = 'Y'
+    IF NO RECORDS FOUND
+      * MESSAGE NOT FOUND - USE DEFAULT
+      COMPRESS 'MESSAGE ' P-MSG-CODE ' NOT DEFINED' INTO #DEFAULT-MSG
+      MOVE #DEFAULT-MSG TO #MSG-TEMPLATE
+      MOVE 'N' TO P-FOUND-FLAG
+      ESCAPE BOTTOM
+    END-NOREC
+*
+    MOVE MF-TEMPLATE TO #MSG-TEMPLATE
+    MOVE 'Y' TO P-FOUND-FLAG
+*
+    * ADD TO CACHE IF SPACE AVAILABLE
+    IF #CACHE-SIZE < #CACHE-MAX
+      ADD 1 TO #CACHE-SIZE
+      MOVE P-MSG-CODE    TO #MSG-CACHE.#MC-CODE(#CACHE-SIZE)
+      MOVE MF-TEMPLATE   TO #MSG-CACHE.#MC-TEMPLATE(#CACHE-SIZE)
+      MOVE MF-SEVERITY   TO #MSG-CACHE.#MC-SEVERITY(#CACHE-SIZE)
+    END-IF
+    ESCAPE BOTTOM
+  END-FIND
+END-IF
+*
+* -------------------------------------------------------
+* SUBSTITUTE PARAMETERS INTO TEMPLATE
+* PARAMETERS ARE MARKED AS &1 &2 &3 &4 &5
+* -------------------------------------------------------
+MOVE #MSG-TEMPLATE TO #WORK-MSG
+*
+IF P-PARAM1 NE ' '
+  EXAMINE #WORK-MSG FOR '&1' REPLACE WITH P-PARAM1
+END-IF
+IF P-PARAM2 NE ' '
+  EXAMINE #WORK-MSG FOR '&2' REPLACE WITH P-PARAM2
+END-IF
+IF P-PARAM3 NE ' '
+  EXAMINE #WORK-MSG FOR '&3' REPLACE WITH P-PARAM3
+END-IF
+IF P-PARAM4 NE ' '
+  EXAMINE #WORK-MSG FOR '&4' REPLACE WITH P-PARAM4
+END-IF
+IF P-PARAM5 NE ' '
+  EXAMINE #WORK-MSG FOR '&5' REPLACE WITH P-PARAM5
+END-IF
+*
+* -------------------------------------------------------
+* ADD SEVERITY PREFIX
+* -------------------------------------------------------
+DECIDE ON FIRST VALUE OF P-SEVERITY
+  VALUE 'I'
+    MOVE 'INFO'    TO #SEVERITY-TEXT
+  VALUE 'W'
+    MOVE 'WARNING' TO #SEVERITY-TEXT
+  VALUE 'E'
+    MOVE 'ERROR'   TO #SEVERITY-TEXT
+  VALUE 'F'
+    MOVE 'FATAL'   TO #SEVERITY-TEXT
+  NONE VALUE
+    MOVE 'INFO'    TO #SEVERITY-TEXT
+END-DECIDE
+*
+COMPRESS #SEVERITY-TEXT ':' #WORK-MSG INTO P-OUTPUT-MSG
+*
+END

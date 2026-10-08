@@ -1,0 +1,122 @@
+* >Natural Source Code: STORE-COPY
+* RETAILCORE - STORE AND WAREHOUSE DATA DEFINITIONS
+* SHARED BY STORE AND WAREHOUSE MODULES
+* CREATED: 1998-03-25
+* MODIFIED: 2010-11-08 - ADDED WAREHOUSE ZONE FIELDS
+* MODIFIED: 2017-03-22 - ADDED STORE HOURS
+* MODIFIED: 2022-06-15 - ADDED FULFILLMENT CAPABILITY
+* -------------------------------------------------------
+*
+* STORE MASTER RECORD
+*
+1 STORE-DATA
+  2 STORE-ID              (N4)    /* STORE IDENTIFIER */
+  2 STORE-CODE            (A6)    /* LEGACY STORE CODE */
+  2 STORE-NAME            (A40)
+  2 STORE-TYPE            (A2)    /* 01=FULL 02=EXPRESS 03=OUTLET 04=KIOSK */
+  2 STORE-STATUS          (A1)    /* A=ACTIVE C=CLOSED T=TEMP-CLOSED R=RENOVATION */
+  2 STORE-REGION          (A4)    /* REGION CODE */
+  2 STORE-DISTRICT        (A4)    /* DISTRICT CODE */
+  2 STORE-MANAGER         (A30)
+  2 STORE-PHONE           (A20)
+  2 STORE-FAX             (A20)   /* LEGACY - STILL IN USE BY SOME SUPPLIERS */
+  2 STORE-EMAIL           (A60)
+*
+* STORE ADDRESS
+*
+1 STORE-ADDRESS
+  2 STR-ADDR-LINE1        (A40)
+  2 STR-ADDR-LINE2        (A40)
+  2 STR-CITY              (A30)
+  2 STR-STATE             (A2)
+  2 STR-ZIP               (A10)
+  2 STR-COUNTRY           (A3)
+  2 STR-LATITUDE          (N10.6)
+  2 STR-LONGITUDE         (N10.6)
+*
+* STORE OPERATIONS
+*
+1 STORE-OPERATIONS
+  2 STR-OPEN-DATE         (D)
+  2 STR-CLOSE-DATE        (D)
+  2 STR-SQ-FOOTAGE        (N8)
+  2 STR-NUM-REGISTERS     (N3)
+  2 STR-NUM-EMPLOYEES     (N4)
+  2 STR-TAX-RATE          (N5.4)
+  2 STR-CURRENCY          (A3)
+  2 STR-TIMEZONE          (A5)
+  2 STR-FULFILLMENT-CAP   (A1)   /* Y=CAN FULFILL ONLINE N=STORE ONLY */
+  2 STR-SHIP-FROM-STORE   (A1)   /* Y=YES N=NO */
+  2 STR-PICKUP-AVAIL      (A1)   /* Y=BOPIS AVAILABLE */
+*
+* STORE HOURS - ADDED 2017
+*
+1 STORE-HOURS
+  2 STR-MON-OPEN          (A5)   /* HH:MM */
+  2 STR-MON-CLOSE         (A5)
+  2 STR-TUE-OPEN          (A5)
+  2 STR-TUE-CLOSE         (A5)
+  2 STR-WED-OPEN          (A5)
+  2 STR-WED-CLOSE         (A5)
+  2 STR-THU-OPEN          (A5)
+  2 STR-THU-CLOSE         (A5)
+  2 STR-FRI-OPEN          (A5)
+  2 STR-FRI-CLOSE         (A5)
+  2 STR-SAT-OPEN          (A5)
+  2 STR-SAT-CLOSE         (A5)
+  2 STR-SUN-OPEN          (A5)
+  2 STR-SUN-CLOSE         (A5)
+*
+* WAREHOUSE MASTER RECORD
+*
+1 WAREHOUSE-DATA
+  2 WH-ID                 (N4)    /* WAREHOUSE IDENTIFIER */
+  2 WH-CODE               (A6)    /* WAREHOUSE CODE */
+  2 WH-NAME               (A40)
+  2 WH-TYPE               (A2)    /* DC=DISTRIBUTION FC=FULFILLMENT RG=REGIONAL */
+  2 WH-STATUS             (A1)    /* A=ACTIVE C=CLOSED M=MAINTENANCE */
+  2 WH-REGION             (A4)
+  2 WH-MANAGER            (A30)
+  2 WH-PHONE              (A20)
+  2 WH-EMAIL              (A60)
+*
+* WAREHOUSE ADDRESS
+*
+1 WAREHOUSE-ADDRESS
+  2 WH-ADDR-LINE1         (A40)
+  2 WH-ADDR-LINE2         (A40)
+  2 WH-CITY               (A30)
+  2 WH-STATE              (A2)
+  2 WH-ZIP                (A10)
+  2 WH-COUNTRY            (A3)
+*
+* WAREHOUSE CAPACITY
+*
+1 WAREHOUSE-CAPACITY
+  2 WH-TOTAL-CAPACITY     (N10)   /* TOTAL STORAGE UNITS */
+  2 WH-USED-CAPACITY      (N10)   /* CURRENTLY USED */
+  2 WH-AVAIL-CAPACITY     (N10)   /* AVAILABLE */
+  2 WH-NUM-ZONES          (N3)    /* NUMBER OF ZONES */
+  2 WH-NUM-AISLES         (N4)    /* NUMBER OF AISLES */
+  2 WH-NUM-BINS           (N6)    /* NUMBER OF BINS */
+  2 WH-PRIORITY           (N2)    /* FULFILLMENT PRIORITY 1=HIGH */
+*
+* LOCATION RECORD - STORE OR WAREHOUSE
+*
+1 LOCATION-DATA
+  2 LOC-ID                (N6)    /* LOCATION IDENTIFIER */
+  2 LOC-TYPE              (A1)    /* S=STORE W=WAREHOUSE */
+  2 LOC-REF-ID            (N4)    /* STORE-ID OR WH-ID */
+  2 LOC-STATUS            (A1)    /* A=ACTIVE I=INACTIVE */
+  2 LOC-FULFILLMENT-FLAG  (A1)    /* Y=CAN FULFILL */
+  2 LOC-PRIORITY          (N2)    /* FULFILLMENT PRIORITY */
+*
+* STORE AUDIT
+*
+1 STORE-AUDIT
+  2 STR-CREATED-DATE      (D)
+  2 STR-CREATED-BY        (A8)
+  2 STR-MODIFIED-DATE     (D)
+  2 STR-MODIFIED-BY       (A8)
+*
+END-DEFINE

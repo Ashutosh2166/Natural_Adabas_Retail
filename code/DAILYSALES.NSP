@@ -1,0 +1,82 @@
+* >Natural Source Code: DAILYSALES
+* PROGRAM: DAILYSALES - DAILY SALES DETAIL REPORT
+* DESCRIPTION: DETAILED SALES REPORT WITH LINE-ITEM DETAIL
+*              BY STORE, PRODUCT, CATEGORY
+* LIBRARY: RETAILCORE
+* ADABAS FILES: 111 (ORDER), 112 (ORDER-LINE)
+* CREATED: 2000-02-15  A. GARCIA
+* MODIFIED: 2009-05-22 - ADDED PRODUCT DETAIL
+* MODIFIED: 2017-08-10 - ADDED MARGIN ANALYSIS
+* -------------------------------------------------------
+DEFINE DATA
+LOCAL
+  1 #REPORT-DATE          (D)
+  1 #TOTAL-LINES          (N8)
+  1 #TOTAL-QTY            (N8)
+  1 #TOTAL-REVENUE        (N13.2)
+  1 #TOTAL-COST           (N13.2)
+  1 #TOTAL-MARGIN         (N13.2)
+  1 #MARGIN-PCT           (N5.2)
+*
+  1 DSO-VIEW VIEW OF ORDER-FILE
+    2 DSO-ID               (N10)
+    2 DSO-NUMBER           (A12)
+    2 DSO-STATUS           (A3)
+    2 DSO-STORE-ID         (N4)
+    2 DSO-DATE             (D)
+    2 DSO-TOTAL-AMT        (N11.2)
+*
+  1 DSL-VIEW VIEW OF ORDER-LINE-FILE
+    2 DSL-ORDER-ID         (N10)
+    2 DSL-LINE-NO          (N3)
+    2 DSL-PROD-ID          (N8)
+    2 DSL-SKU              (A15)
+    2 DSL-DESCRIPTION      (A60)
+    2 DSL-QTY-ORDERED      (N6)
+    2 DSL-UNIT-PRICE       (N9.2)
+    2 DSL-DISCOUNT-AMT     (N9.2)
+    2 DSL-LINE-TOTAL       (N11.2)
+    2 DSL-STATUS           (A3)
+END-DEFINE
+*
+MOVE *DATX TO #REPORT-DATE
+SUBTRACT 1 FROM #REPORT-DATE (D)
+*
+WRITE 'RETAILCORE - DAILY SALES DETAIL REPORT'
+WRITE '======================================='
+WRITE 'REPORT DATE:' #REPORT-DATE
+WRITE ' '
+WRITE 'ORDER      STORE LINE SKU            '
+  'DESCRIPTION                        QTY   PRICE     TOTAL'
+WRITE '---------- ----- ---- ---------------'
+  ' ---------------------------------- ----- --------- -----------'
+*
+FIND DSO-VIEW WITH DSO-DATE = #REPORT-DATE
+  IF DSO-STATUS = 'CAN'
+    ESCAPE TOP
+  END-IF
+*
+  FIND DSL-VIEW WITH DSL-ORDER-ID = DSO-ID
+    IF DSL-STATUS = 'CAN'
+      ESCAPE TOP
+    END-IF
+    ADD 1 TO #TOTAL-LINES
+    ADD DSL-QTY-ORDERED TO #TOTAL-QTY
+    ADD DSL-LINE-TOTAL TO #TOTAL-REVENUE
+*
+    WRITE DSO-NUMBER DSO-STORE-ID DSL-LINE-NO DSL-SKU
+      DSL-DESCRIPTION (EM=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX)
+      DSL-QTY-ORDERED DSL-UNIT-PRICE DSL-LINE-TOTAL
+  END-FIND
+END-FIND
+*
+WRITE ' '
+WRITE '---------- ----- ---- ---------------'
+  ' ---------------------------------- ----- --------- -----------'
+WRITE 'TOTAL LINES   :' #TOTAL-LINES
+WRITE 'TOTAL QTY     :' #TOTAL-QTY
+WRITE 'TOTAL REVENUE :' #TOTAL-REVENUE
+WRITE ' '
+WRITE 'END OF REPORT'
+*
+END
