@@ -1,0 +1,20 @@
+Share the details for the below github repo the below format.
+
+https://github.com/Ashutosh2166/Natural_Adabas_Retail.git
+
+Project Name
+Description
+Organization
+Line of Business
+Sector
+Focus Area
+Repository Name
+Technology
+Root Snippets Directory
+Entry Point Directory
+Exclude Directory
+Repository URL
+Branch
+Module Name
+Module Description
+Actor Names
